@@ -1,0 +1,291 @@
+---
+title: "Homework 03"
+author: "Huanhuan Yue, NetID hyue4"
+date: 'Due: Friday, September 29, 11:59 PM'
+urlcolor: cyan
+---
+
+Please see the [homework instructions document](https://daviddalpiaz.github.io/stat430fa17/homework_policy.html) for detailed instructions and some grading notes. Failure to follow instructions will result in point reductions.
+
+***
+
+# Exercise 1 (Data Scaling?)
+
+**[8 points]** This exercise will use data in [`hw03-train-data.csv`](hw03-train-data.csv) and [`hw03-test-data.csv`](hw03-test-data.csv) which are train and test datasets respectively. Both datasets contain multiple predictors and a numeric response `y`.
+
+Fit a total of six $k$-nearest neighbors models. Consider three values of $k$: 1, 5, and 25. To make a total of six models, consider both scaled and unscaled $X$ data. For each model, use all available predictors.
+
+Summarize these results using a single well-formatted table which displays test RMSE, `k`, and whether or not scaling was used.
+
+Read the datasets
+```{r}
+library(readr)
+library(FNN)
+library(MASS)
+train = read.csv("hw03-train-data.csv")
+test = read.csv("hw03-test-data.csv")
+```
+
+```{r}
+X_train=train[,2:5]
+X_test=test[,2:5]
+y_train=train["y"]
+y_test=test["y"]
+```
+
+```{r}
+#unscaled
+fit1=FNN::knn.reg(X_train,X_test,y_train,k=1)
+fit5=FNN::knn.reg(X_train,X_test,y_train,k=5)
+fit25=FNN::knn.reg(X_train,X_test,y_train,k=25)
+
+#scaled
+fit1s=FNN::knn.reg(scale(X_train),scale(X_test),y_train,k=1)
+fit5s=FNN::knn.reg(scale(X_train),scale(X_test),y_train,k=5)
+fit25s=FNN::knn.reg(scale(X_train),scale(X_test),y_train,k=25)
+```
+
+
+```{r}
+get_rmse=function(actual,predicted){
+  sqrt(mean((actual-predicted)^2))
+}
+
+ns1=get_rmse(y_test,fit1$pred)
+ns5=get_rmse(y_test,fit5$pred)
+ns25=get_rmse(y_test,fit25$pred)
+s1=get_rmse(y_test,fit1s$pred)
+s5=get_rmse(y_test,fit5s$pred)
+s25=get_rmse(y_test,fit25s$pred)
+
+test_rmse=c(ns1,ns5,ns25,s1,s5,s25)
+```
+
+```{r}
+k=c(1,5,25)
+scale_status = c(rep("Unscaled",3),rep("Scaled",3))
+
+knn=data.frame(k,
+               test_rmse,
+               scale_status)
+colnames(knn) = c("k ","Test RMSE","Scaled or Unscaled")
+knitr::kable(knn)
+```
+
+
+***
+
+# Exercise 2 (KNN versus Linear Models)
+
+**[9 points]** Find a $k$-nearest neighbors model that outperforms an additive linear model for predicting `mpg` in the `Auto` data from the `ISLR` package. Use the following data cleaning and test-train split to perform this analysis. Keep all of the predictor variables as numeric variables. Report the test RMSE for both the additive linear model, as well as your chosen model. For your model, also note what value of $k$ you used, as well as whether or not you scaled the $X$ data.
+
+```{r}
+# install.packages("ISLR")
+library(ISLR)
+auto = Auto[, !names(Auto) %in% c("name")]
+```
+
+```{r}
+set.seed(42)
+auto_idx = sample(1:nrow(auto), size = round(0.5 * nrow(auto)))
+auto_trn = auto[auto_idx, ]
+auto_tst = auto[-auto_idx, ]
+```
+
+The additive linear model can be fit using:
+
+```{r}
+lm(mpg ~ ., data = auto_trn)
+```
+
+```{r}
+X_train=auto_trn[,-1]
+mpg_train=auto_trn["mpg"]
+X_test=auto_tst[,-1]
+mpg_test=auto_tst["mpg"]
+
+k = seq(5, 25, by = 5)
+rmse = function(actual, predicted) {
+  sqrt(mean((actual - predicted) ^ 2))
+}
+
+fit_pred = function(k){
+  knn.reg(train = X_train, test = X_test, y = mpg_train, k = k)
+}
+
+```
+
+```{r}
+
+#unscale
+test_rmse_knn=c()
+index=1
+for (i in 1:length(k)){
+  # Test RMSE
+  test_knn=knn.reg(X_train,X_test,mpg_train,k=k[i])
+  test_rmse=rmse(mpg_test,test_knn$pred)
+  test_rmse_knn[i]=test_rmse
+  
+  index=index+1
+}
+
+#scale
+test_rmse_knn2=c()
+index=1
+for (i in 1:length(k)){
+  # Test RMSE
+  test_knn2=knn.reg(scale(X_train),scale(X_test),mpg_train,k=k[i])
+  test_rmse2=rmse(mpg_test,test_knn2$pred)
+  test_rmse_knn2[i]=test_rmse2
+  
+  index=index+1
+}
+
+krmse=c(test_rmse_knn,test_rmse_knn2)
+```
+
+
+```{r}
+
+scale_status2 = c(rep("Unscaled",5),rep("Scaled",5))
+
+knn2=data.frame(k,
+               krmse,
+               scale_status2)
+colnames(knn2) = c("k ","Test RMSE","Scaled or Unscaled")
+knitr::kable(knn2)
+
+```
+
+Based on the table above, the KNN model with sclaed model with k=5 is the best model with smallest Test RMSE. So we choose this one to compare with the additive model. 
+
+```{r}
+ad=lm(mpg ~ ., data = auto_trn)
+pv=predict(ad,newdata=auto_tst)
+ad_rmse=get_rmse(mpg_test,pv)
+
+#when k=5
+c_rmse=test_rmse_knn2[1]
+```
+
+```{r}
+knn3=data.frame(c("Addictive Model", "Chosen Model"),c(ad_rmse,c_rmse))
+colnames(knn3) = c("Model ","Test RMSE")
+knitr::kable(knn3)
+```
+
+# Exercise 3 (Bias-Variance Tradeoff, KNN)
+
+**[8 points]** Run a modified version of the simulation study found in [Section 8.3 of R4SL](https://daviddalpiaz.github.io/r4sl/biasvariance-tradeoff.html#simulation). Use the same data generating process to simulate data:
+
+```{r}
+f = function(x) {
+  x ^ 2
+}
+```
+
+```{r}
+get_sim_data = function(f, sample_size = 100) {
+  x = runif(n = sample_size, min = 0, max = 1)
+  y = rnorm(n = sample_size, mean = f(x), sd = 0.3)
+  data.frame(x, y)
+}
+```
+
+So, the following generates one simulated dataset according to the data generating process defined above.
+
+```{r}
+sim_data = get_sim_data(f)
+```
+
+Evaluate predictions of $f(x = 0.90)$ for three models:
+
+- $k$-nearest neighbors with $k = 1$. $\hat{f}_1(x)$
+- $k$-nearest neighbors with $k = 10$. $\hat{f}_{10}(x)$
+- $k$-nearest neighbors with $k = 100$. $\hat{f}_{100}(x)$
+
+For simplicity, when fitting the $k$-nearest neighbors models, do not scale $X$ data.
+
+Use 500 simulations to estimate squared bias, variance, and the mean squared error of estimating $f(0.90)$ using $\hat{f}_k(0.90)$ for each $k$. Report your results using a well formatted table.
+
+At the beginning of your simulation study, run the following code, but with your nine-digit Illinois UIN.
+
+```{r}
+set.seed(665720057)
+n_sims = 500
+n_models = 3
+predictions = matrix(0, nrow = n_sims, ncol = n_models)
+```
+
+```{r}
+for(sim in 1:n_sims) {
+  sim_data = get_sim_data(f)
+  # fit models
+  x=sim_data["x"]
+  y=sim_data["y"]
+  fit_1 =FNN::knn.reg(x,.9,y,k=1)
+  fit_10 =FNN::knn.reg(x,.9,y,k=10)
+  fit_100 =FNN::knn.reg(x,.9,y,k=100)
+  # get predictions
+  predictions[sim, 1] = fit_1$pred
+  predictions[sim, 2] = fit_10$pred
+  predictions[sim, 3] = fit_100$pred
+}
+```
+
+```{r}
+get_mse = function(truth, estimate) {
+  mean((estimate - truth) ^ 2)
+}
+
+get_bias = function(estimate, truth) {
+  mean(estimate) - truth
+}
+
+get_var = function(estimate) {
+  mean((estimate - mean(estimate)) ^ 2)
+}
+```
+
+```{r}
+bias = apply(predictions, 2, get_bias, truth = f(x = 0.90))
+variance = apply(predictions, 2, get_var)
+mse = apply(predictions, 2, get_mse, truth = f(x = 0.90))
+```
+
+```{r}
+k=c(1,10,100)
+knn=data.frame(k,
+               bias^2,
+               variance,
+               mse)
+colnames(knn) = c("k ","Squared Bias   ","   Variance", "   MSE")
+knitr::kable(knn)
+
+```
+
+***
+
+# Exercise 4 (Concept Checks)
+
+**[1 point each]** Answer the following questions based on your results from the three exercises.
+
+**(a)** Based on your results in Exercise 1, which $k$ performed best?
+        
+        Scaled model with k=25 performed the best because it has the smallest Test RMSE.
+        
+**(b)** Based on your results in Exercise 1, was scaling the data appropriate?
+        
+        It is appropriate as the test RMSE is smaller after scaling.
+        
+**(c)** Based on your results in Exercise 2, why do you think it was so easy to find a $k$-nearest neighbors model that met this criteria?
+        
+        This is because k-nearest neighbors can work well with non linear model as well.
+        
+**(d)** Based on your results in Exercise 3, which of the three models do you think are providing unbiased predictions?
+        
+        Model when k=1 and k=10 are unbiased since their Squared biass are very small.
+        
+**(e)** Based on your results in Exercise 3, which model is predicting best at $x = 0.90$?
+        
+        Model when k=10 is the best at predicting at x=0.9 as its unbiased and has a smaller variance than that of k=1. 

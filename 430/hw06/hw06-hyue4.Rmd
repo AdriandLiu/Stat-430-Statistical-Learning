@@ -1,0 +1,215 @@
+---
+title: "Homework 06"
+author: "Huanhuan Yue netID hyue4"
+date: 'Due: Friday, October 27, 11:59 PM'
+urlcolor: cyan
+---
+
+Please see the [homework instructions document](https://daviddalpiaz.github.io/stat430fa17/homework_policy.html) for detailed instructions and some grading notes. Failure to follow instructions will result in point reductions.
+
+
+For this homework we will use data found in [`wisc-trn.csv`](wisc-trn.csv) and [`wisc-tst.csv`](wisc-tst.csv) which contain train and test data respectively. `wisc.csv` is provided but not used. This is a modification of the Breast Cancer Wisconsin (Diagnostic) dataset from the UCI Machine Learning Repository. Only the first 10 feature variables have been provided. (And these are all you should use.)
+
+- [UCI Page](https://archive.ics.uci.edu/ml/datasets/Breast+Cancer+Wisconsin+(Diagnostic))
+- [Data Detail](https://archive.ics.uci.edu/ml/machine-learning-databases/breast-cancer-wisconsin/wdbc.names)
+
+You should consider coercing the response to be a factor variable. 
+
+You should use the `caret` package and training pipeline to complete this homework. Any time you use the `train()` function, first run `set.seed(1337)`.
+
+***
+
+# Exercise 1 (Tuning KNN with `caret`)
+
+**[6 points]** Train a KNN model using all available predictors, **no data preprocessing**, 5-fold cross-validation, and a well chosen value of the tuning parameter. Consider $k = 1, 3, 5, 7, \ldots, 101$. Store the tuned model fit to the training data for later use. Plot the cross-validated accuracies as a function of the tuning parameter.
+```{r}
+library(readr)
+library(caret)
+library(lattice)
+library(ggplot2)
+library(class)
+```
+
+```{r}
+#read in dataset
+train1=read.csv("wisc-trn.csv")
+test1=read.csv("wisc-tst.csv")
+#convert to factor
+train1$class=factor(train1$class)
+test1$class=factor(test1$class)
+set.seed(1337)
+```
+
+```{r}
+knn1=train(
+  class ~.,
+  data=train1,
+  method="knn",
+  trControl = trainControl(method = "cv", number = 5),
+  tuneGrid=expand.grid(k=seq(1,101,by=2))
+)
+
+plot(knn1,xlab="k",main="Accuracy vs k")
+```
+***
+
+# Exercise 2 (More Tuning KNN with `caret`)
+
+**[6 points]** Train a KNN model using all available predictors, predictors scaled to have mean 0 and variance 1, 5-fold cross-validation, and a well chosen value of the tuning parameter. Consider $k = 1, 3, 5, 7, \ldots, 101$. Store the tuned model fit to the training data for later use. Plot the cross-validated accuracies as a function of the tuning parameter.
+
+```{r}
+set.seed(1337)
+knn2=train(
+  class ~.,
+  data=train1,
+  method="knn",
+  trControl = trainControl(method = "cv", number = 5),
+  preProcess=c("center","scale"),
+  tuneGrid=expand.grid(k=seq(1,101,by=2))
+)
+plot(knn2,xlab="Number of k",main="Accuracy vs k")
+```
+
+***
+
+# Exercise 3 (Random Forest?)
+
+**[6 points]** Now that we've introduced `caret`, it becomes extremely easy to try different statistical learning methods. Train a random forest using all available predictors, **no data preprocessing**, 5-fold cross-validation, and well a chosen value of the tuning parameter. Using `caret` to perform the tuning, there is only a single tuning parameter, `mtry`. Consider `mtry` values between 1 and 10. Store the tuned model fit to the training data for later use. Report the cross-validated accuracies as a function of the tuning parameter using a well formatted table.
+```{r}
+set.seed(1337)
+rfmod=train(
+  class~.,
+  data=train1,
+  method="rf",
+  trControl=trainControl(method="cv",number=5),
+  tuneGrid=expand.grid(mtry=seq(1,10))
+)
+```
+
+```{r}
+knitr::kable(rfmod$results[,1:2],caption="Cross-validated Accuracies",align='c')
+```
+
+***
+
+# Exercise 4 (Concept Checks)
+
+**[1 point each]** Answer the following questions based on your results from the three exercises. Format your answer to this exercise as a table with one column indicating the part, and the other column for your answer. See the `rmarkdown` source for a template of this table.
+
+**(a)** What value of $k$ is chosen for KNN without predictor scaling?
+```{r}
+knn1$bestTune
+```
+
+k=23 is better without predictor scaling.
+
+**(b)** What is the cross-validated accuracy for KNN without predictor scaling?
+
+```{r}
+get_best_result = function(caret_fit) {
+  best = which(rownames(caret_fit$results) == rownames(caret_fit$bestTune))
+  best_result = caret_fit$results[best, ]
+  rownames(best_result) = NULL
+  best_result
+}
+get_best_result(knn1)
+```
+The mean of 5-fold CV accuracy is 0.8976664.
+
+**(c)** What is the test accuracy for KNN without predictor scaling?
+
+```{r}
+calc_acc=function(actual,predicted){
+  mean(actual==predicted)
+}
+
+calc_acc(actual=test1$class,predicted=predict(knn1,newdata=test1))
+```
+The test accuracy for KNN without predictor scaling is 0.86.
+
+**(d)** What value of $k$ is chosen for KNN **with** predictor scaling?
+```{r}
+knn2$bestTune
+```
+k=3 is chosen for KNN with predictor scaling.
+
+**(e)** What is the cross-validated accuracy for KNN **with** predictor scaling?
+```{r}
+get_best_result = function(caret_fit) {
+  best_result = caret_fit$results[as.numeric(rownames(caret_fit$bestTune)),]
+  rownames(best_result) = NULL
+  best_result
+}
+get_best_result(knn2)
+```
+The mean of accuracy is 0.9552276.
+
+**(f)** What is the test accuracy for KNN **with** predictor scaling?
+
+```{r}
+calc_acc(actual=test1$class,predicted=predict(knn2,newdata=test1))
+```
+The test accuracy for KNN with predictor scaling is 0.88.
+
+**(g)** Do you think that KNN is performing better with or without predictor scaling?
+
+KNN is performing better with predictor scaling since the test accuracy and the average of cv accuracy are higher with predictor scaling than those without.
+
+**(h)** What value of `mtry` is chosen for the random forest?
+```{r}
+rfmod$bestTune
+```
+mtry=4 is chosen for the random forest
+
+**(i)** Using the random forest, what is the (estimated) probability that the 10th observation of the test data is a cancerous tumor?
+```{r}
+predict(rfmod,newdata=test1[10,-1],type="prob")[2]
+```
+The probability that the 10th observation of the test data is a cancerous tumor is .04.
+
+**(j)** Using the random forest, what is the (test) sensitivity?
+
+```{r}
+sensitivity=function(actual,predicted){
+  sum(predicted=='M' & actual=='M')/sum(actual=='M')
+}
+sensitivity(test1$class,predict(rfmod,test1))
+```
+
+**(k)** Using the random forest, what is the (test) specificity?
+```{r}
+specificity=function(actual,predicted){
+  sum(predicted=='B' & actual=='B')/sum(actual=='B')
+}
+specificity(test1$class,predict(rfmod,test1))
+
+```
+
+
+**(l)** Based on these results, is the random forest or KNN model performing better?
+
+KNN is performing better with predictor scaling than without scaling and random forest.
+
+
+```{r}
+a = 23
+b = 0.897666437886
+c = 0.86
+d = 3
+e = 0.95522763
+f = 0.88
+g = "The one with scaling performs better"
+h = 4
+i = 0.04
+j = 0.875
+k = 0.96667
+l = "KNN is performing better with predictor scaling than without scaling and random forest."
+
+results = data.frame(
+  part = LETTERS[1:12],
+  answer = c(a,b,c,d,e,f,g,h,i,j,k,l)
+)
+
+knitr::kable(results)
+```
+

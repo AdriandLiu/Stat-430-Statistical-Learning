@@ -1,0 +1,154 @@
+  ---
+title: "final"
+date: "11/29/2017"
+output: html_document
+---
+
+```{r setup, echo = FALSE, message = FALSE, warning = FALSE}
+options(scipen = 1, digits = 4, width = 80)
+library(knitr)
+opts_chunk$set(echo=TRUE,
+               cache=TRUE, autodep=TRUE, cache.comments=FALSE,
+               message=FALSE, warning=FALSE)
+```
+
+```{r}
+data = read.csv("defaults.csv", row.names = NULL)
+default=data[,-1]
+default$DEFAULT = as.factor(default$DEFAULT)
+head(default)
+```
+
+```{r}
+library(caret)
+default_idx = createDataPartition(default$DEFAULT, p = 0.80, list = FALSE)
+default_trn = default[default_idx, ]
+default_tst = default[default_idx, ]
+```
+
+```{r}
+default_glm_cv  = train(
+    DEFAULT ~ .,
+    data = default_trn,
+    trControl = trainControl(method = "cv", number = 5),
+    method = "glm"
+)
+head(predict(default_glm_cv),30)
+default_glm_cv$results
+```
+
+```{r}
+calc_acc = function(actual, predicted) {
+  mean(actual == predicted)
+}
+get_acc = function(model, data, response) {
+  calc_acc(actual = data[, response], 
+       predicted = predict(model, data))
+}
+model_list1=list(default_glm_cv)
+test_acc = sapply(model_list1, get_acc, data = default_tst, response = "DEFAULT")
+test_acc
+```
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+library('caret')
+
+set.seed(42)
+default_dt=train(
+  DEFAULT ~ .,
+  data = default_trn,
+  trControl = trainControl(method = "cv", number = 5),
+  method = "rpart"
+)
+default_dt$results
+```
+
+```{r}
+library(rpart.plot)
+rpart.plot(default_dt$finalModel)
+
+default_dt$results$Accuracy
+tree_cv_tst_acc = calc_acc(predicted = predict(default_dt, newdata=default_tst),
+                           actual    = default_tst$DEFAULT )
+default_dt$bestTune
+
+sensitivity=function(actual,predicted){
+  sum(predicted=='DEFAULT' & actual=='DEFAULT')/sum(actual=='DEFAULT')
+}
+sensitivity(default_tst$DEFAULT,predict(rfmod,test1))
+```
+
+
+```{r}
+default_knn_cv = train(
+  DEFAULT ~ .,
+  data = default_trn,
+  method = "knn",
+  trControl = trainControl(method = "cv", number = 5),
+  tuneGrid=expand.grid(k=seq(1, 51, by = 2))
+default_knn_cv$results
+```
+
+
+```{r}
+# training data
+X_wisc_trn = default_trn[, -1]
+y_wisc_trn = default_trn$DEFAULT
+
+# testing data
+X_wisc_tst = default_tst[, -1]
+y_wisc_tst = default_tst$DEFAULT
+
+calc_class_err = function(actual, predicted) {
+  mean(actual != predicted)
+}
+```
+
+```{r}
+# train scaled
+library(FNN)
+k_to_try = seq(1, 51, by = 2)
+tst_err_k = rep(x = 0, times = length(k_to_try))
+trn_err_k = rep(x = 0, times = length(k_to_try))
+for (i in seq(1,21,by=2)) {
+  
+  tst_pred = knn(train = X_wisc_trn, 
+                 test  = X_wisc_tst, 
+                 cl    = y_wisc_trn, 
+                 k     = k_to_try[i])
+  
+  trn_pred = knn(train = X_wisc_trn,
+                 test  = X_wisc_trn,
+                 cl    = y_wisc_trn,
+                 k     = k_to_try[i])
+  
+  tst_err_k[i] = calc_class_err(y_wisc_tst, tst_pred)
+  trn_err_k[i] = calc_class_err(y_wisc_trn, trn_pred)
+  
+}
+```
+
+Introduction 
+-Why should be done? 
+"credit cards" has been the most successful commodity in consumption finance.  When the issue card bank deals with applications, the method of artificial examination in judging credit amount and whether the credit card is issued or not will waste time and human resources. The quality of credit evaluation can be easily affected by the inconsistencies and differences of individual judgment as well. On the other hand, it is important to manage the credit condition of card owner as well.
+
+-Why is model useful?
+Owing to the credit risk involves many facts, data mining has become an important tool in recent years. If we could find the probabilistic defaulters earlier, and monitor their behavior, it might prevent the occurrence of default effectively. Therefore, the main purpose of this research lies in the combined technology of commercial wisdom and data mining. We try to establish a set of stable and predictive model effectively and provide a standard for the related departments and the issue card organizations. This can reduce the proportion of default and credit risk. 
+
+-Goal?
+By means of the advantages, we can promote the evaluation of the bank in marketing. Our research chooses logistic regression as the designated tool, and builds a model after different sampling methods. Our model can predict more than 70% of the general prediction, non-default prediction, and default ones. That a domestic and foreign research team builds a 70% to 80% accuracy prediction model shows our model has had certain credits. Therefore, our research can provide related researchers with future references in the selection of analytical tools and the process of sampling.
+
+Data background?
+
+

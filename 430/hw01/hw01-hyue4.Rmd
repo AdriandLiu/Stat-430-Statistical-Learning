@@ -1,0 +1,189 @@
+---
+title: "Homework 01"
+author: "Huanhuan Yue netID:hyue4"
+date: 'Due: Friday, September 15, 11:59 PM'
+urlcolor: cyan
+---
+
+# Exercise 1
+
+**[10 points]** This question will use data in a file called [`hw01-data.csv`](hw01-data.csv). The data contains four predictors: `a`, `b`, `c`, `d`, and a response `y`.
+
+After reading in the data as `hw01_data`, use the following code to test-train split the data.
+
+**Read in the dataset**
+```{r}
+hw01_data = read.csv("hw01-data.csv")
+```
+
+
+```{r}
+set.seed(42)
+train_index = sample(1:nrow(hw01_data), size = round(0.5 * nrow(hw01_data)))
+train_data = hw01_data[train_index, ]
+test_data = hw01_data[-train_index, ]
+```
+
+Next, fit four linear models using the training data:
+
+- Model 1: `y ~ .`
+- Model 2: `y ~ . + I(a ^ 2) + I(b ^ 2) + I(c ^ 2)`
+- Model 3: `y ~ . ^ 2 + I(a ^ 2) + I(b ^ 2) + I(c ^ 2)`
+- Model 4: `y ~ a * b * c * d + I(a ^ 2) + I(b ^ 2) + I(c ^ 2)`
+
+For each of the models above, report:
+  - Train RMSEs
+  - Test RMSEs
+  - Number of Parameters, Excluding the Variance
+  
+To receive full marks, arrange this information in a well formatted table. Also note which model is best for making predictions.
+
+**[Not Graded]** For fun, find a model that outperforms each of the models above. *Hint:* Consider some exploratory data analysis. *Hint:* Your instructor's solution uses a model with only seven parameters. Yours may have more
+
+**Solution:**
+
+**Fit the models:**
+```{r}
+fm1 = lm(y~., data=train_data)
+fm2 = lm(y ~ . + I(a ^ 2) + I(b ^ 2) + I(c ^ 2),data=train_data)
+fm3 = lm(y ~ . ^ 2 + I(a ^ 2) + I(b ^ 2) + I(c ^ 2),data=train_data)
+fm4 = lm(y ~ a * b * c * d + I(a ^ 2) + I(b ^ 2) + I(c ^ 2), data=train_data)
+```
+
+**Compute rmse**
+```{r}
+rmse = function(actual, predicted) {
+  sqrt(mean((actual - predicted) ^ 2))
+}
+```
+
+
+```{r}
+get_rmse = function(model, data, response) {
+  rmse(actual = data[, response], 
+       predicted = predict(model, data))
+}
+```
+
+**Compute the number of Parameter**
+```{r}
+get_complexity = function(model) {
+  length(coef(model))
+}
+```
+
+```{r}
+model_list = list(fm1, fm2, fm3, fm4)
+(train_rmse = sapply(model_list, get_rmse, data = train_data, response = "y"))
+(test_rmse = sapply(model_list, get_rmse, data = test_data, response = "y"))
+(model_complexity = sapply(model_list, get_complexity))
+```
+
+| Model   | Train RMSE      | Test RMSE       | Predictors              |
+|---------|-----------------|-----------------|-------------------------|
+| `fm1` | `r train_rmse[1]` | `r test_rmse[1]` | `r model_complexity[1]` |
+| `fm2` | `r train_rmse[2]` | `r test_rmse[2]` | `r model_complexity[2]` |
+| `fm3` | `r train_rmse[3]` | `r test_rmse[3]` | `r model_complexity[3]` |
+| `fm4` | `r train_rmse[4]` | `r test_rmse[4]` | `r model_complexity[4]` |
+
+Here we’ve arranged the results as a table. This table shows that model3 performs the best with the smallest test RMSE.
+***
+
+# Exercise 2
+
+**[10 points]** For this question we will use the `Boston` data from the `MASS` package. Use `?Boston` to learn more about the data.
+
+```{r}
+library(readr)
+library(MASS)
+library(tibble)
+data(Boston)
+Boston = as_tibble(Boston)
+```
+
+Use the following code to test-train split the data.
+
+```{r}
+set.seed(42)
+boston_index = sample(1:nrow(Boston), size = 400)
+train_boston = Boston[boston_index, ]
+test_boston  = Boston[-boston_index, ]
+```
+
+Fit the following linear model that uses `medv` as the response.
+
+```{r}
+fit = lm(medv ~ . ^ 2, data = train_boston)
+```
+
+Fit two additional models, both that perform worse than `fit` with respect to prediction. One should be a smaller model. The other should be a larger mode. Call them `fit_smaller` and `fit_larger` respectively. Any "smaller" model should be nested in any "larger" model.
+
+Report these three models as well as their train RMSE, test RMSE, and number of parameters. Note: you may report the models used using their `R` syntax. To receive full marks, arrange this information in a well formatted table.
+```{r}
+fit_smaller = lm(medv~.+I(crim^2)+I(zn^2),data = train_boston)
+fit_larger =lm(medv~.^2+I(crim^2),data = train_boston)
+```
+
+```{r}
+model_list2 = list(fit,fit_smaller,fit_larger)
+
+(train_rmse2 = sapply(model_list2, get_rmse, data = train_boston, response = "medv"))
+(test_rmse2 = sapply(model_list2, get_rmse, data = test_boston, response = "medv"))
+(model_complexity2 = sapply(model_list2, get_complexity))
+
+df2=data.frame(Model=c("fit","fit_smaller","fit_larger"),train_rmse2,test_rmse2,"Number of Parameters"=model_complexity2)
+df2
+```
+
+| Model   | Train RMSE      | Test RMSE       | Numbers of Parameters              |
+|---------|-----------------|-----------------|-------------------------|
+| `fit` | `r train_rmse2[1]` | `r test_rmse2[1]` | `r model_complexity2[1]` |
+| `fit_smaller` | `r train_rmse2[2]` | `r test_rmse2[2]` | `r model_complexity2[2]` |
+| `fit_larger` | `r train_rmse2[3]` | `r test_rmse2[3]` | `r model_complexity2[3]` |
+Here we’ve arranged the results as a table. This table shows that model fit performs the best. (Note that we only ever consider Test RMSE to make this determination.)
+***
+
+# Exercise 3
+
+**[10 points]** How do outliers affect prediction? Usually when fitting regression models for explanation, dealing with outliers is a complicated issue. When considering prediction, we can empirically determine what to do.
+
+Continue using the `Boston` data, training split, and models from Exercise 2. Consider the model stored in `fit` from Exercise 2. Obtain the standardized residuals from this fitted model. Refit this model with each of the following modifications:
+
+- Removing observations from the training data with absolute standardized residuals greater than 2.
+- Removing observations from the training data with absolute standardized residuals greater than 3.
+
+**(a)** Use these three fitted models, including the original model fit to unmodified data, to obtain test RMSE. Summarize these results in a table. Include the number of observations removed for each. Which performs the best? Were you justified modifying the training data?
+```{r}
+fit = lm(medv ~ . ^ 2, data = train_boston)
+
+train_2=train_boston[-which(abs(rstandard(fit))>2),]
+
+train_3=train_boston[-which(abs(rstandard(fit))>3),]
+
+
+fit_r2 = lm(medv~.^2,data=train_2)
+fit_r3 =lm(medv~.^2,data=train_3)
+
+model_list_r = list(fit,fit_r2,fit_r3)
+
+test_rmser = sapply(model_list_r, get_rmse, data = test_boston, response = "medv")
+```
+| Model   | Test RMSE       | Oberservation Removed              |
+|---------|-----------------|-----------------|-------------------------|
+| `fit`     | `r test_rmser[1]` | `r dim(train_boston)[1] - dim(train_boston)[1]` |
+| `fit_r2` | `r test_rmser[2]` | `r dim(train_boston)[1] - dim(train_2)[1]` |
+| `fit_r3` | `r test_rmser[3]` | `r dim(train_boston)[1] - dim(train_3)[1]` |
+
+
+
+**(b)** Using the *best* of these three fitted models, create a 99% **prediction interval** for a new observation with the following values for the predictors:
+
+| crim    | zn   | indus | chas | nox    | rm    | age  | dis    | rad | tax | ptratio | black  | lstat |
+|---------|------|-------|------|--------|-------|------|--------|-----|-----|---------|--------|-------|
+| 0.02763 | 75.0 | 3.95  | 0    | 0.4280 | 6.595 | 22.8 | 5.4011 | 3   | 252 | 19.3    | 395.63 | 4.32  |
+```{r}
+data_fit = data.frame(crim=0.02763,zn=75.0,indus=3.95,chas=0,nox=.4280,rm=6.595,age=22.8,dis=5.4011, rad=3,tax=252,ptratio=19.3,black=395.63,lstat=4.32)
+
+predict(fit_r3 ,newdata=data_fit, interval = c("prediction"), level = .99)
+```
+

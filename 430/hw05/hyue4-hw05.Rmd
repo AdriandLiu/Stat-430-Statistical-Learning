@@ -1,0 +1,291 @@
+---
+title: "Homework 05"
+author: "STAT 430, Fall 2017"
+date: 'Due: Friday, October 13, 11:59 PM'
+urlcolor: cyan
+---
+
+Please see the [homework instructions document](https://daviddalpiaz.github.io/stat430fa17/homework_policy.html) for detailed instructions and some grading notes. Failure to follow instructions will result in point reductions.
+
+***
+
+# Exercise 1 (Detecting Cancer with KNN)
+
+**[7 points]** For this exercise we will use data found in [`wisc-trn.csv`](wisc-trn.csv) and [`wisc-tst.csv`](wisc-tst.csv) which contain train and test data respectively. `wisc.csv` is provided but not used. This is a modification of the Breast Cancer Wisconsin (Diagnostic) dataset from the UCI Machine Learning Repository. Only the first 10 feature variables have been provided. (And these are all you should use.)
+
+- [UCI Page](https://archive.ics.uci.edu/ml/datasets/Breast+Cancer+Wisconsin+(Diagnostic))
+- [Data Detail](https://archive.ics.uci.edu/ml/machine-learning-databases/breast-cancer-wisconsin/wdbc.names)
+
+You should consider coercing the response to be a factor variable. Use KNN with all available predictors. For simplicity, do not scale the data. (In practice, scaling would slightly increase performance on this dataset.) Consider $k = 1, 3, 5, 7, \ldots, 51$. Plot train and test error vs $k$ on a single plot.
+
+Use the seed value provided below for this exercise.
+
+```{r}
+set.seed(314)
+```
+
+```{r}
+library(readr)
+wisc_trn = read.csv('wisc-trn.csv')
+wisc_tst = read.csv('wisc-tst.csv')
+```
+
+```{r}
+x_trn = wisc_trn[,-1]
+y_trn = wisc_trn$class
+x_tst = wisc_tst[,-1]
+y_tst = wisc_tst$class
+
+calc_class_err = function(actual, predicted) {
+  round(mean(actual != predicted),7)
+}
+
+k = seq(1,51,2)
+trn_error = rep(x = 0, times = length(k))
+tst_error = rep(x = 0, times = length(k))
+```
+
+```{r}
+library(FNN)
+for (i in 1:length(k)){
+  trn_pred = knn(train = x_trn, test = x_trn, cl = y_trn, k = k[i])
+  tst_pred = knn(train = x_trn, test = x_tst, cl = y_trn, k = k[i])
+  trn_error[i] = calc_class_err(y_trn, trn_pred)
+  tst_error[i] = calc_class_err(y_tst, tst_pred)
+}
+
+plot(k, trn_error, type = "b", col = "dodgerblue", cex = 1, pch = 20,
+ ylim = c(min(c(trn_error, tst_error)) - 0.02, max(c(trn_error,    tst_error)) + 0.02),xlab = "k, number of neighbors", ylab = "classification error",
+main = "Train & Test Error Rate vs Neighbors")
+lines(k, tst_error, type = "b", col = "red")
+
+abline(h = min(tst_error), col = "red", lty = 3)
+ legend("bottomright",c("Train Error","Test Error"),
+ col=c("dodgerblue","red"),
+       cex=0.75,
+       lty=c(1,1))
+```
+
+***
+
+# Exercise 2 (Logistic Regression Decision Boundary)
+
+**[5 points]** Continue with the cancer data from Exercise 1. Now consider an additive logistic regression that considers only two predictors, `radius` and `symmetry`. Plot the test data with `radius` as the $x$ axis, and `symmetry` as the $y$ axis, with the points colored according to their tumor status. Add a line which represents the decision boundary for a classifier using 0.5 as a cutoff for predicted probability.
+
+***
+```{r}
+glm1 = glm(class~radius+symmetry, data = wisc_tst, family = "binomial")
+
+boundary_line = function(model){
+  intercept = as.numeric(-coef(model)[1]/coef(model)[3])
+  slope = as.numeric(-coef(model)[2]/coef(model)[3])
+  c(intercept = intercept, slope = slope)
+}
+
+add_boundary = function(model, line_col = "black") {
+  abline(boundary_line(model), col = line_col, lwd = 3)
+}
+
+intercept = boundary_line(glm1)[1]
+slope = boundary_line(glm1)[2]
+
+rad = seq(min(wisc_tst$radius) - 5, max(wisc_tst$radius) + 5, by = 2)
+sym = seq(min(wisc_tst$symmetry) - 0.1, max(wisc_tst$symmetry) + 0.1, by = 0.05)
+grid = expand.grid(rad = rad, sym = sym)
+background = ifelse(grid$sym > intercept + slope * grid$rad,
+                    "dodgerblue",
+                    "red")
+class_color = ifelse(wisc_tst$class == 'B', "red", "dodgerblue")
+plot(symmetry ~ radius,
+     data = wisc_tst,
+     col = class_color,
+     pch = 20)
+add_boundary(glm1)
+points(expand.grid(rad, sym), col = background, pch = ".")
+```
+
+# Exercise 3 (Sensitivity and Specificity of Cancer Detection)
+
+**[5 points]** Continue with the cancer data from Exercise 1. Again consider an additive logistic regression that considers only two predictors, `radius` and `symmetry`. Report test sensitivity, test specificity, and test accuracy for three classifiers, each using a different cutoff for predicted probability:
+
+- $c = 0.1$
+- $c = 0.5$
+- $c = 0.9$
+
+Consider `M` to be the "positive" class when calculating sensitivity and specificity. Summarize these results using a single well-formatted table.
+
+```{r}
+glm2 = glm(class~radius+symmetry, data = wisc_trn, family = "binomial")
+get_pred = function(mod, data, res = "y", pos = 1, neg = 0, cut = 0.5) {
+  probs = predict(mod, newdata = data, type = "response")
+  ifelse(probs > cut, pos, neg)
+}
+
+test_pred_10 = get_pred(glm2, wisc_tst, res = "class", pos = "M", neg = "B", cut = 0.1)
+
+test_pred_50 = get_pred(glm2, wisc_tst, res = "class", pos = "M", neg = "B", cut = 0.5)
+  
+test_pred_90 = get_pred(glm2, wisc_tst, res = "class", pos = "M", neg = "B", cut = 0.9)
+
+test_tab_10 = table(predicted = test_pred_10, actual = wisc_tst$class)
+test_tab_50 = table(predicted = test_pred_50, actual = wisc_tst$class)
+test_tab_90 = table(predicted = test_pred_90, actual = wisc_tst$class)
+
+test_con_mat_10 = caret::confusionMatrix(test_tab_10, positive = "M")
+test_con_mat_50 = caret::confusionMatrix(test_tab_50, positive = "M")
+test_con_mat_90 = caret::confusionMatrix(test_tab_90, positive = "M")
+```
+
+```{r}
+metrics = rbind(
+  c(test_con_mat_10$overall["Accuracy"],
+  test_con_mat_50$byClass["Sensitivity"],
+  test_con_mat_90$byClass["Specificity"]),
+  
+  c(test_con_mat_10$overall["Accuracy"],
+  test_con_mat_50$byClass["Sensitivity"],
+  test_con_mat_90$byClass["Specificity"]),
+  
+  c(test_con_mat_10$overall["Accuracy"],
+  test_con_mat_50$byClass["Sensitivity"],
+  test_con_mat_90$byClass["Specificity"])
+  )
+
+rownames(metrics) = c("c = 0.10", "c = 0.50", "c = 0.90")
+knitr::kable(metrics)
+```
+
+***
+
+# Exercise 4 (Comparing Classifiers)
+
+**[7 points]** Use the data found in [`hw05-trn.csv`](hw05-trn.csv) and [`hw05-tst.csv`](hw05-tst.csv) which contain train and test data respectively. Use `y` as the response. Coerce `y` to be a factor after importing the data if it is not already.
+
+Create pairs plot with ellipses for the training data, then train the following models using both available predictors:
+
+- Additive Logistic Regression
+- LDA (with Priors estimated from data)
+- LDA with Flat Prior
+- QDA (with Priors estimated from data)
+- QDA with Flat Prior
+- Naive Bayes (with Priors estimated from data)
+
+Calculate test and train error rates for each model. Summarize these results using a single well-formatted table.
+```{r}
+library(MASS)
+library(e1071)
+library(caret)
+train5 = read.csv("hw05-trn.csv")
+test5 = read.csv("hw05-tst.csv")
+
+train5$y = as.factor(train5$y)
+test5$y = as.factor(test5$y)
+```
+
+```{r}
+library(nnet)
+library(ellipse)
+
+caret::featurePlot(x = train5[, 2:3],
+            y = train5$y,
+            plot = "density",
+            scales = list(x = list(relation="free"),
+                          y = list(relation="free")),
+            adjust = 1.5,
+            pch = "|",
+            layout = c(2, 1),
+            auto.key = list(columns = 4))
+```
+
+```{r}
+caret::featurePlot(x = train5[,2:3],
+                   y = train5$y,
+                   plot = "ellipse",
+                   auto.key = list(columns = 4))
+```
+
+```{r}
+#Logistic
+logistic = function(x1, x2) {
+  calc_class_err(x2$y, predict(multinom(y ~ ., data = x1, trace = FALSE), x2))
+}
+#LDA
+lda_error = function(x1, x2) {
+  calc_class_err(x2$y, predict(lda(y ~ ., data = x1), x2)$class)
+}
+#LDA PRIOR
+lda_prior = function(x1, x2) {
+  calc_class_err(x2$y, predict(lda(
+  y ~ ., data = x1, prior = c(1, 1, 1, 1) / 4
+  ), x2)$class)
+}
+#QDA
+qda_error = function(x1, x2) {
+  calc_class_err(x2$y, predict(qda(y ~ ., data = x1), x2)$class)
+}
+#QDA PRIOR
+qda_prior = function(x1, x2) {
+  calc_class_err(x2$y, predict(qda(
+  y ~ ., data = x1, prior = c(1, 1, 1, 1) / 4
+  ), x2)$class)
+}
+#NAIVE BAYES
+bayes = function(x1, x2) {
+  calc_class_err(x2$y, predict(naiveBayes(y ~ ., data = x1), x2))
+}
+```
+
+```{r}
+#Train Error 
+train_error = c(logistic(train5, train5), lda_error(train5, train5), lda_prior(train5, train5), qda_error(train5, train5), qda_prior(train5, train5), bayes(train5, train5))
+
+#Test Error 
+test_error = c(logistic(train5, test5), lda_error(train5, test5), lda_prior(train5, test5), qda_error(train5, test5), qda_prior(train5, test5), bayes(train5, test5))
+
+classifier = c("Logistic",
+               "LDA",
+               "LDA, Flat Prior",
+               "QDA",
+               "QDA, Flat Prior",
+               "Naive Bayes")
+
+results = data.frame(classifier, train_error, test_error)
+
+colnames(results) = c("Method", "Train Error", "Test Error")
+
+knitr::kable(results)
+```
+
+***
+
+# Exercise 5 (Concept Checks)
+
+**[1 point each]** Answer the following questions based on your results from the three exercises.
+
+**(a)** Which $k$ performs best in Exercise 1?
+
+k=5 performs best as it obatins the smallest test Test Error.
+
+**(b)** In Exercise 4, which model performs best?
+
+QDA with flat prior performs best as it obtains the lowest Test Error
+
+**(c)** In Exercise 4, why does Naive Bayes perform poorly?
+ 
+Here naive Bayes doesn’t get a chance to show its strength since LDA and QDA already perform well, and the number of predictors is low. 
+
+**(d)** In Exercise 4, which performs better, LDA or QDA? Why?
+
+QDA performs better than LDA as QDA obtains a smaller test error. This is due to ΣkΣk appear to be very different for different classes.
+
+**(e)** In Exercise 4, which prior performs better? Estimating from data, or using a flat prior? Why?
+
+Flat prior performs better because the proportion of classes in the test data is uniform.
+
+**(f)** In Exercise 4, of the four classes, which is the easiest to classify?
+
+Class “B” because it does not overlap too much with other classes.
+
+**(g)** [**Not Graded**] In Exercise 3, which classifier would be the best to use in practice?
+
+

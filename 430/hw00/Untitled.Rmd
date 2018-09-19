@@ -1,0 +1,38 @@
+---
+title: "Homework 01"
+author: "Huanhuan Yue"
+date: 'Due: Friday, September 15, 11:59 PM'
+urlcolor: cyan
+---
+
+# Exercise 1
+
+**[10 points]** This question will use data in a file called [`hw01-data.csv`](hw01-data.csv). The data contains four predictors: `a`, `b`, `c`, `d`, and a response `y`.
+
+After reading in the data as `hw01_data`, use the following code to test-train split the data.
+
+```{r}
+hw01_data = read.csv("~/Desktop/430 david/hw01/hw01-data.csv")
+```
+
+
+```{r, eval = FALSE}
+set.seed(42)
+train_index = sample(1:nrow(hw01_data), size = round(0.5 * nrow(hw01_data)))
+train_data = hw01_data[train_index, ]
+test_data = hw01_data[-train_index, ]
+```
+
+Next, fit four linear models using the training data:
+
+- Model 1: `y ~ .`
+- Model 2: `y ~ . + I(a ^ 2) + I(b ^ 2) + I(c ^ 2)`
+- Model 3: `y ~ . ^ 2 + I(a ^ 2) + I(b ^ 2) + I(c ^ 2)`
+- Model 4: `y ~ a * b * c * d + I(a ^ 2) + I(b ^ 2) + I(c ^ 2)`
+
+```{r}
+fm1 = lm(y~., train_data)
+fm2 = lm(y ~ . + I(a ^ 2) + I(b ^ 2) + I(c ^ 2),data=train_data)
+fm3 = lm(y ~ . ^ 2 + I(a ^ 2) + I(b ^ 2) + I(c ^ 2),data=train_data)
+fm4 = lm(y ~ a * b * c * d + I(a ^ 2) + I(b ^ 2) + I(c ^ 2), data=train_data)
+```
