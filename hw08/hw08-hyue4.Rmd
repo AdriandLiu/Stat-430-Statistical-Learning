@@ -1,0 +1,364 @@
+---
+author: "Huanhuan Yue, hyue4"
+date: 'Due: Friday, November 10, 11:59 PM'
+urlcolor: cyan
+---
+
+***
+
+# Exercise 1 (Classifying Leukemia)
+
+**[10 points]** For this question we will use the data in [`leukemia.csv`](leukemia.csv) which originates from [Golub et al. 1999.](http://www.ncbi.nlm.nih.gov/pubmed/10521349)
+
+The response variable `class` is a categorical variable. There are two possible responses: `ALL` (acute myeloid leukemia) and `AML` (acute lymphoblastic leukemia), both types of leukemia. We will use the many feature variables, which are expression levels of genes, to predict these classes.
+
+Note that, this dataset is rather large and you may have difficultly loading it using the "Import Dataset" feature in RStudio. Instead place the file in the same folder as your `.Rmd` file and run the following command. (Which you should be doing anyway.) Again, since this dataset is large, use 5-fold cross-validation when needed.
+
+```{r, message = FALSE, warning = FALSE}
+library(readr)
+leukemia = read_csv("leukemia.csv", progress = FALSE)
+```
+
+For use with the `glmnet` package, it will be useful to create a factor response variable `y` and a feature matrix `X` as seen below. We won't test-train split the data since there are so few observations.
+
+```{r}
+y = as.factor(leukemia$class)
+X = as.matrix(leukemia[, -1])
+```
+
+Do the following:
+
+- Set a seed equal to your UIN.
+- Fit the full path of a logistic regression with both a lasso penalty and a ridge penalty. (Don't use cross-validation. Also let `glmnet` choose the $\lambda$ values.) Create side-by-side plots that shows the features entering (or leaving) the models.
+- Use cross-validation to tune an logistic regression with a lasso penalty. Again, let `glmnet` choose the $\lambda$ values. Store both the $\lambda$ that minimizes the deviance, as well as the $\lambda$ that has a deviance within one standard error. Create a plot of the deviances for each value of $\lambda$ considered. Use these two $\lambda$ values to create a grid for use with `train()` in `caret`. Use `train()` to get cross-validated classification accuracy for these two values of $\lambda$. Store these values.
+- Use cross-validation to tune an logistic regression with a ridge penalty. Again, let `glmnet` choose the $\lambda$ values. Store both the $\lambda$ that minimizes the deviance, as well as the $\lambda$ that has a deviance within one standard error. Create a plot of the deviances for each value of $\lambda$ considered. Use these two $\lambda$ values to create a grid for use with `train()` in `caret`. Use `train()` to get cross-validated classification accuracy for these two values of $\lambda$. Store these values.
+- Use cross-validation to tune $k$-nearest neighbors using `train()` in `caret`. Do not specify a grid of $k$ values to try, let `caret` do so automatically. (It will use 5, 7, 9.) Store the cross-validated accuracy for each. Scale the predictors.
+- Summarize these **seven** models in a table. (Two lasso, two ridge, three knn.) For each report the cross-validated accuracy and the standard deviation of the accuracy.
+```{r}
+#Exercise 1a
+set.seed(665720057)
+library(glmnet)
+library(caret)
+```
+
+```{r}
+#Exercise 1b
+#lasso
+par(mfrow = c(1, 2))
+fit_lasso = glmnet(X, y, family = "binomial",alpha = 1)
+plot(fit_lasso)
+plot(fit_lasso, xvar = "lambda", label = TRUE,main="Lasso")
+```
+The two plots illustrate how much the coefficients are penalized for different values of  λ. Notice some of the coefficients are forced to be zero.
+
+```{r}
+#Exercise 1b
+#ridge
+par(mfrow = c(1, 2))
+fit_ridge = glmnet(X, y,family = "binomial",alpha = 0)
+plot(fit_ridge)
+plot(fit_ridge, xvar = "lambda", label = TRUE,main="Ridge")
+```
+The two plots illustrate how much the coefficients are penalized for different values of λ. Notice none of the coefficients are forced to be zero.
+
+
+```{r}
+#Exercise 1c
+#Use cross-validation to tune an logistic regression with a lasso penalty
+fit_lasso_cv = cv.glmnet(X, y, family = "binomial",alpha = 1,nfolds = 5)
+plot(fit_lasso_cv)
+```
+
+```{r}
+#Exercise 1c
+# the two lambda values of interest
+library(broom)
+glance(fit_lasso_cv) 
+```
+
+
+```{r}
+#Exercise 1c
+cv_5 = trainControl(method = "cv", number = 5)
+
+lasso_grid = expand.grid(alpha = 1, 
+                         lambda = c(fit_lasso_cv$lambda.min, fit_lasso_cv$lambda.1se))
+lasso_grid
+
+sim_data = data.frame(y, X)
+fit_lasso = train(
+  y ~ ., data = sim_data,
+  method = "glmnet",
+  trControl = cv_5,
+  tuneGrid = lasso_grid
+)
+lasso_result=fit_lasso$results
+```
+
+```{r}
+#Exercise 1d
+#Use cross-validation to tune an logistic regression with a ridge penalty
+fit_ridge_cv = cv.glmnet(X, y, family = "binomial",alpha = 0,nfolds = 5)
+plot(fit_ridge_cv)
+```
+
+```{r}
+#Exercise 1d
+# the two lambda values of interest
+glance(fit_ridge_cv) 
+ridge_grid = expand.grid(alpha = 0, 
+                         lambda = c(fit_ridge_cv$lambda.min, fit_ridge_cv$lambda.1se))
+sim_data_ridge = data.frame(y, X)
+fit_ridge = train(
+  y ~ ., data = sim_data_ridge,
+    family="binomial",
+  method = "glmnet",
+  trControl = cv_5,
+  tuneGrid = ridge_grid
+)
+ridge_result=fit_ridge$results
+```
+
+```{r}
+#Exercise 1e
+#tuned k_nearest neighbors model
+# setup knn tuning/scale
+knn_control    = trainControl(method = "cv", number = 5)
+knn_preprocess = c("center","scale")
+
+# training and tune knn model
+set.seed(665720057)
+leukemia_knn_scaled = train(y ~ ., data = sim_data,  method = "knn",
+                        trControl  = knn_control,
+                        preProcess = knn_preprocess)
+knn_result=leukemia_knn_scaled$results
+
+```
+
+```{r}
+#Exercise 1f
+CV_Accuracy =c(
+  lasso_result[,3],ridge_result[,3],knn_result[,2]
+)
+
+Accuracy_SD = c(lasso_result[,5],ridge_result[,5],knn_result[,4])
+
+Models = c("Lasso","Lasso with Cross Validation","Ridge","Ridge with Cross Validation","k=5",'k=7',"k=9")
+
+results = data.frame(Models,CV_Accuracy,Accuracy_SD)
+
+colnames(results) = c("Models", "CV Accuracy", "Accuracy Standard Deviation")
+
+knitr::kable(results)
+
+```
+
+***
+
+# Exercise 2 (The Cost of College)
+
+**[10 points]** For this exercise, we will use the `College` data from the `ISLR` package. Familiarize yourself with this dataset before performing analyses. We will attempt to predict the `Outstate` variable.
+
+Test-train split the data using this code.
+
+```{r, message = FALSE, warning = FALSE}
+set.seed(42)
+library(caret)
+library(ISLR)
+index = createDataPartition(College$Outstate, p = 0.75, list = FALSE)
+college_trn = College[index, ]
+college_tst = College[-index, ]
+```
+
+Train a total of **six** models using five-fold cross validation.
+
+- An additive linear model.
+- An elastic net model using additive predictors. Use a `tuneLength` of `10`.
+- An elastic net model that also considers all two-way interactions. Use a `tuneLength` of `10`.
+- A well-tuned KNN model.
+- A well-tuned KNN model that also considers all two-way interactions. (Should this work?)
+- A default-tuned random forest.
+
+Before beginning, set a seed equal to your UIN.
+
+```{r}
+uin = 665720057
+set.seed(uin)
+```
+
+- Create a table which reports CV and Test RMSE for each.
+```{r}
+cv_5 = trainControl(method = "cv", number = 5)
+```
+
+
+```{r}
+#additive linear regression
+set.seed(uin)
+out_alr=train(
+  Outstate~.,
+  data=college_trn,
+  method="lm",
+  trControl=cv_5
+)
+```
+
+```{r}
+set.seed(uin)
+#elastic net model
+out_elnet = train(
+  Outstate ~ ., data = college_trn,
+  method = "glmnet",
+  trControl = cv_5,
+   tuneLength = 10
+)
+```
+
+```{r}
+set.seed(uin)
+#elastic net model with all two way interactions
+out_elnet_twoway = train(
+  Outstate ~ . ^ 2, data = college_trn,
+  method = "glmnet",
+  trControl = cv_5,
+   tuneLength = 10
+)
+```
+
+
+```{r}
+set.seed(uin)
+#tuned knn without scale
+out_knn_uns=train(
+  Outstate~.,
+  data=college_trn,
+  method="knn",
+  preProcess=c("center","scale"),
+  trControl=cv_5
+)
+```
+
+```{r}
+set.seed(uin)
+#tuned knn without scale with all two way
+out_knn_uns_twoway=train(
+  Outstate~.^2,
+  data=college_trn,
+  method="knn",
+  preProcess=c("center","scale"),
+  trControl=cv_5
+)
+```
+
+```{r}
+#random forest
+set.seed(uin)
+out_rf=train(
+  Outstate~.,
+  data=college_trn,
+  method="rf",
+  trControl=cv_5
+)
+```
+
+```{r}
+get_best_result = function(caret_fit) {
+  best = which(rownames(caret_fit$results) == rownames(caret_fit$bestTune))
+  best_result = caret_fit$results[best, ]
+  rownames(best_result) = NULL
+  best_result
+}
+calc_rmse = function(actual, predicted) {
+  sqrt(mean((actual - predicted) ^ 2))
+}
+#get cv rmse
+CV_RMSE= c(
+get_best_result(out_alr)$RMSE,
+get_best_result(out_elnet)$RMSE,
+get_best_result(out_elnet_twoway)$RMSE,
+get_best_result(out_knn_uns)$RMSE,
+get_best_result(out_knn_uns_twoway)$RMSE,
+get_best_result(out_rf)$RMSE)
+
+#get test rmse
+TestRMSE = c(
+calc_rmse(actual = college_tst$Outstate,
+          predicted = predict(out_alr, college_tst)),
+calc_rmse(actual = college_tst$Outstate,
+          predicted = predict(out_elnet, college_tst)),
+calc_rmse(actual = college_tst$Outstate,
+          predicted = predict(out_elnet_twoway, college_tst)),
+calc_rmse(actual = college_tst$Outstate,
+          predicted = predict(out_knn_uns, college_tst)),
+calc_rmse(actual = college_tst$Outstate,
+          predicted = predict(out_knn_uns_twoway, college_tst)),
+calc_rmse(actual = college_tst$Outstate,
+          predicted = predict(out_rf, college_tst))
+)
+
+
+Models = c("Additive linear regression","Elastic Net Model","Elastic Net Model with Two Way Interaction","Well Tuned KNN"," Well Tuned KNN with Two Way Interaction","Default-Tuned Random Forest")
+
+results = data.frame(Models,CV_RMSE,TestRMSE)
+
+colnames(results) = c("Models", "CV RMSE", "Test RMSE")
+
+knitr::kable(results)
+```
+
+# Exercise 3 (Concept Checks)
+
+**[1 point each]** Answer the following questions based on your results from the three exercises. 
+
+### Leukemia
+
+**(a)** How many observations are in the dataset? How many predictors are in the dataset?
+
+```{r}
+dim(leukemia)
+```
+
+There are 72 observations in the dataset and 5148 predictors.
+
+**(b)** Based on the deviance plots, do you feel that `glmnet` considered enough $\lambda$ values for lasso?
+
+Yes, because there is a U-shaped curve for deviance ratios in the plot.
+
+**(c)** Based on the deviance plots, do you feel that `glmnet` considered enough $\lambda$ values for ridge?
+
+No, becuae there deviance ratio plot o
+
+**(d)** How does $k$-nearest neighbor compare to the penalized methods? Can you explain any difference?
+
+KNN method does not perform as good compared to the penalized methods because of the high dimensionality.
+
+**(e)** Based on your results, which model would you choose? Explain.
+
+I would choose ridge because it obtains the highest accuracy and a small accuracy standard deviation.
+
+
+
+### College
+
+**(f)** Based on the table, which model do you prefer? Justify your answer.
+
+I prefer Random Forest since it obtains lowest test RMSE and lowest CV RMSE.
+
+**(g)** For both of the elastic net models, report the best tuning parameters from `caret`. For each, is this ridge, lasso, or somewhere in between? If in between, closer to which?
+```{r}
+data_ela=data.frame(out_elnet$bestTune,
+out_elnet_twoway$bestTune)
+data_ela
+```
+The elastic net model using additive predictors uses α=0.1 while the elastic net model with interactions uses α=0.2. They are both between ridge and lasso, but are closer to ridge.
+
+**(h)** Did you scale the predictors when you used KNN? Should you have scaled the predictors when you used KNN?
+
+Yes, I scaled the predictors. Since the unscaled one performs worse, scaling the predictors is more appropriate.
+
+**(i)** Of the two KNN models which works better? Can you explain why?
+
+The knn model without the interactions works better becasue knn method does not work well for high dimensionality.
+
+**(j)** What year is this dataset from? What was out-of-state tuition at UIUC at that time?
+The dataset is from 1995. The out-of-state tuition at UIUC at that time is $7560
