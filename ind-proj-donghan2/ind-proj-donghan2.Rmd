@@ -1,0 +1,365 @@
+---
+title: "Predicting House Price Class in King County for Individual Use"
+author: "Liu, Donghan"
+date: "Donghan2"
+abstract: "The purpose of this project is to use four data classification techniques to predict the levels of house price in King County. I am aiming to find the best approach to get the highest accuracy so that the model would be used in predicting house price in King Country. With the usage of the most accurate model, if the required predictors¡¯ data are provided, the outputs will be relatively the best estimated price classification. The mediums that applied are included but not limited to Boosted Tree, K-nearest Neighbors with/ without scale, and Random Forest. Consequently, the technique of Random Forest has the highest test accuracy in estimating the real classification of house price. The prediction that generated from the most accurately model is potentially beneficial for individual purchase, commercial investment, and governmental planning in the King County area."
+output:
+  html_document:
+    theme: simplex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#1. Introduction
+
+As the growing of real estate industries nowadays, the price of house turns out to be popular topic that people usually discuss. The contents in the conversations might straightforward to the features that affect the house price, for instance, a house with higher square feet of living would have higher list price, intuitionally. Thus, I am taking the datasets from the house price of King County where located in the central Washington State to predict classifying the house price in four classes: Lower, Lower Intermediate, Upper Intermediate, and Upper, based off the original dataset.
+
+People are trying their best to make the better estimation in accordance with their real life experiences, but sometimes they are inappropriately precise and even incorrect because of insufficient information. Therefore, by implementing the statistical learning methods on the king county house price data, I would like to use these potential influential predictors to give a relatively best estimating. It is widely known that people are usually subject while making decisions, especially when they firmly believe their own thoughts. Whereas, unlike people¡¯s subjective judgment, the data is objectivity. The results from the data analysis perhaps have higher accuracy than humans¡¯ experience, it is not only because object data will give an object results, but also due to that data will more likely to have comprehensive information. Overall, I intend to find the best statistical learning model to offer constructive suggestions on the individual¡¯s house purchasers, for instance, the buyers who have the certain value for predictors will have a roughly picture on the certain price class by utilizing the model. 
+
+Additionally, the dataset that used in this project are the house features and price in the King County, which contains 21 variables and 21316 data. Among the 21 predictors, 19 are house features, and the other two are price and id. By way of example, id and date are not useful in this model because the time series theories will not be applied here. Square feet of home (sqft_living), square feet of lot (sqft_lot), grade, and location (zip code (zipcode), latitude (lat), and longitude (long)), are more likely to be the most important predictors to influence the predicting results, from an intuitionistic perspective. Other predictors are included but not limited to: has been viewed (view), how good the overall condition is (condition), built year (yr_built). The detailed variables descriptions are listed in appendix. 
+
+#2. Method
+
+In the method session, I am introducing the general procedure of what I have done to finalize the best model. 
+
+```{r,warning=FALSE,message=FALSE}
+library(caret)
+library(randomForest)
+library(knitr)
+library(e1071)
+library(knitr)
+library(kableExtra)
+#Read Datasets
+data = read.csv("https://daviddalpiaz.github.io/stat432sp18/projects/kc_house_data.csv")
+```
+
+##2.1 Data Cleaning
+
+###2.1.1 Outliers Detection
+
+Firstly, since the dataset from the house price of King County is not validated yet, so I need to make sure all the data are valid and ready to be analyze, such as, NAN and NA are useless during the processing of algorithm. After removing all the NA values, the variables of date and id are unnecessary, as mentioned in the **Introduction** section. Then, assuming the linearity of the model and use this assumption to remove the potential outliers in order to increase the prediction accuracy. 
+
+```{r}
+#Data cleaning
+house = data[complete.cases(data), ]
+
+#Removing 'date' and 'id' variables
+house = data[,-(1:2),drop=FALSE]
+
+#Since we want the prediction to price, so fit the model with response of price variable
+mod_full_lm = lm(price ~ ., data = house)
+
+# Cook's Distance & Outliers
+plot(cooks.distance(mod_full_lm), main = "Outliers Detection")
+text(cooks.distance(mod_full_lm))
+
+house = house[-c(3915,7253,9255,15871,4412),]
+
+#In order to reduce the magnitude, we divide price by 100000
+house$price = house$price/100000
+```
+
+###2.1.2 House Price Classification
+
+Here, the potential outliers and variables of id and date are removed and the data is ready to process.
+
+Classify the price by the quantile of house price. The encode are 1 = Lower; 2 = Lower Intermediate; 3 = Upper Intermediate; 4 = Upper;
+
+```{r}
+price = house$price
+class = c()
+for (i in price){
+  if (i>=0.75 & i<3.215){
+    class = c(class,1)
+  }
+  else if(i>=3.215 & i<4.5){
+    class = c(class,2)
+  }
+  else if(i>=4.5 & i<6.45){
+    class = c(class,3)
+  }
+  else{
+    class = c(class,4)
+  }
+}
+```
+
+##2.2 Model Selection
+
+In this subsection, I am going to start the model selection by the basis of correlation and random forest feature selection. 
+
+###2.2.1 Removal of Highly Correlated Variables
+
+Among the model selection, the first technique is correlation. While doing the data analysis, ideally we do not want to include any predictors that are highly correlated in the final model, since it will cause the collinearity and further affect the analysis results. Also I would like my predictors are independent in order to correctly determine the interpretation of relationships. 
+
+```{r}
+# calculate correlation matrix
+correlationMatrix <- cor(house[,1:19])
+highlyCorrelated <- findCorrelation(correlationMatrix, cutoff = 0.75, exact = T)
+#Remove the variables that are hightly correlated
+house = house[,-c(11)]
+```
+
+###2.2.2 Random Forest Feature Selection
+
+With the implement of random forest feature selection, by computing the importance of each variables, generate the overall percentage in order to make an intuitionistic determination for choosing the highly important predictors. Leaving them in the model for the future analysis. 
+
+```{r, warning=FALSE, message=FALSE}
+house$class = class
+#Model selection by Random Forest
+rf = randomForest(class ~ ., data = house[,-1], ntree=50, importance = TRUE)
+#Importance
+rf1 = varImp(rf, scale = FALSE)
+rf1$Perc = rf1$Overall/sum(rf1$Overall)
+rf1 = rf1[with(rf1,order(Perc,decreasing = T)),]
+perc = sort(rf1$Perc, decreasing = T)
+sum = c(perc[1])
+for (i in 2:length(perc)){
+  sum = c(sum, sum[i-1] + perc[i])
+}
+rf1$Sum = sum
+#Print features that could be removed
+kable_styling(kable(rf1[rf1$Sum>0.95,], format = "html", digits = 7), full_width = FALSE)
+```
+
+As a 95% cut-off for sum of percentage of importance, bathrooms, view, floors, waterfront, sqft_basement, condition, bedrooms, and yr_renovated are unnecessary in this model. 
+
+###2.2.3 Train-Test-Split
+
+In this subsection, I removed the unimportant feature and split the new datasets to train and test data. 
+
+```{r}
+#Train-test-split
+set.seed(42)
+house_red = house[,-c(1,2,3,6,7,8,9,11,13)]
+house_trn_idx  = sample(nrow(house_red), size = trunc(0.80 * nrow(house_red)))
+house_trn_data = house_red[house_trn_idx, ]
+house_tst_data = house_red[-house_trn_idx, ]
+```
+
+##2.3 Boosted Tree Model
+
+The algorithm of boosted tree is aiming to strengthen the weak learners (high bias, low variance). Since the boosted tree model is good for process data with categorical features with fewer than hundreds of categories, it is suitable here. 
+
+```{r}
+#Boosted Tree Model
+mod_gbm_cv = train(house_trn_data[,1:9],as.factor(house_trn_data[,10]),
+                   trControl = trainControl(method = "cv", number = 5), 
+                   method = "gbm",
+                   verbose = FALSE)
+```
+
+##2.4 K-nearest Neighbors 
+
+K-nearest Neighbors is a classification technique that used in recognizing the data pattern. One powerful advantage of KNN is that it is non-parametric, which does not assume the distribution of the original data, so its predictions are not limited or affected by the theoretical distribution. Plus, this approach will compute all the possible cases and give the best predicting. 
+
+###2.4.1 KNN model without scale
+
+The training model without scale will use the original data (non-normalized) to fit KNN model, but it might risk of bias. 
+
+```{r}
+#Knn without scale
+k = seq(1,100,5)
+mod_knn = train(form = as.factor(class) ~ ., 
+              data = house_trn_data,
+              trControl = trainControl(method = 'cv', number = 5),
+              method = 'knn',
+              tuneGrid = expand.grid(k = k))  
+```
+
+###2.4.2 KNN model with scale
+
+The training model with scale will use the scaled data (normalized) to fit KNN model in order to shorten the vibration between neighbors. 
+
+```{r}
+#Knn with scale
+mod_knn_scale = train(form = as.factor(class) ~ ., 
+              data = house_trn_data,
+              trControl = trainControl(method = 'cv', number = 5),
+              method = 'knn',
+              tuneGrid = expand.grid(k = k),
+             preProcess = c('center','scale'))
+
+```
+
+
+##2.5 Random Forest
+
+Like the Boosted Tree Model, Random Forest is also the tree-based model. Random Forest is the ensemble method that merge the idea of decision tree, it generates mass of decision tree to construct a ¡°forest¡± by a bootstrapped training sample. By implementing this algorithm, the final decision was made by the overall performance and the ¡°bagging¡± help the learning model to get a stable and accurate prediction. 
+
+```{r, message=FALSE, warning=FALSE}
+#Random Forest
+mod_rf = train(form = as.factor(class) ~ ., 
+              data = house_trn_data,
+              trControl = trainControl(method = 'cv', number = 5),
+              method = 'rf',
+              tuneGrid = expand.grid(mtry = c(1, 2, 3, 4, 5)))
+
+```
+
+#3. Results
+
+```{r, echo=FALSE}
+model_list = list(mod_gbm_cv,mod_knn,mod_knn_scale,mod_rf)
+confusion_tabs = lapply(model_list, FUN = function(m){
+  t = table(predicted = predict(m, newdata = house_tst_data), 
+                        actual = house_tst_data$class)
+  confusionMatrix(t)
+  }) 
+accuracys = sapply(confusion_tabs, FUN = function(m){m$overall["Accuracy"]})
+
+accuracys = as.matrix(accuracys)
+colnames(accuracys) = "Accuracy"
+rownames(accuracys) = c("Boosted Tree","KNN","KNN_Scaled","Random Forest")
+sensitivitys_byClass = sapply(confusion_tabs, FUN = function(m){m$byClass})[1:4,1:4]
+colnames(sensitivitys_byClass) = c("Boosted Tree Sensi","KNN Sensi","KNN_Scaled Sensi","Random Forest Sensi")
+rownames(sensitivitys_byClass) = c("Lower","Lower Intermediate","Upper Intermediate","Upper")
+
+specificitys_byClass = sapply(confusion_tabs, FUN = function(m){m$byClass})[5:8,1:4]
+colnames(specificitys_byClass) = c("Boosted Tree Spec","KNN Spec","KNN_Scaled Spec","Random Forest Spec")
+rownames(specificitys_byClass) = c("Lower","Lower Intermediate","Upper Intermediate","Upper")
+```
+
+##3.1 Plots
+
+Among the accuracy plot, Boosted Tree model¡¯s accuracy is discussed in three max tree depth, which are 1, 2, 3 (highest accuracy). 
+
+```{r, echo=FALSE}
+plot(mod_gbm_cv, main = "Model of Boosted Tree")
+```
+
+The model of KNN without scale has relatively consistent accuracy from 30-100, the maximum accuracy point appear around 50.
+
+```{r, echo=FALSE}
+plot(mod_knn, main = "Model of KNN Without Scale")
+```
+
+After scaling, the accuracy has an obvious increasing, but the trend of accuracy start declining from point 20.
+
+```{r, echo=FALSE}
+plot(mod_knn_scale, main = "Model of KNN With Scale")
+```
+
+The Random Forest model is producing higher accuracy with compared to other three models. 
+
+```{r, echo=FALSE}
+plot(mod_rf, main = "Model of Random Forest")
+```
+
+
+##3.2 Accuracy
+
+Accuracy for the four models are listed below. The random forest model is the best model regarding the measurement of Accuracy
+```{r, echo=FALSE}
+kable_styling(kable(accuracys, format = "html", digits = 4), full_width = FALSE)
+```
+
+
+##3.3 Sensitivity
+
+Sensitivity for the four models are listed below, which are seperated by price class. The random forest model is the best model regarding the measurement of sensitivity.
+
+```{r, echo=FALSE}
+kable_styling(kable(sensitivitys_byClass, format = "html", digits = 4), full_width = FALSE)
+```
+
+
+##3.4 Specificity
+
+Specificity for the four models are listed below, which are seperated by price class. The random forest model is the best model regarding the measurement of specificity.
+
+```{r, echo=FALSE}
+kable_styling(kable(specificitys_byClass, format = "html", digits = 4), full_width = FALSE)
+```
+
+From the overall consideration of accuracy, sensitivity, and specificity, it is clearly to see that random forest would be considered as the best classification model.
+
+
+#4. Discussion
+
+¡°All models are wrong¡± ¨CGeorge Box. There is not best model ever, and there is not best model future, the only existing model is a better model. The predictions from these four classification techniques are not sufficiently remarkable, but it indeed provides a basic comparison between them with respect to analyzing the house price in King County. 
+
+In the data cleaning section, I was fitting the linear model with assumption of the linearity of data to remove the potential outliers, however, the data is partially nonlinear and this assumption is not valid. Reasonably, only few points have extremely high cook¡¯s distance value and these points are removable.
+
+Moreover, while I was looking for the highly correlated variables, the detected two predictors are index at 4 and 11. The 11th variables was abandoned without any measurements. The interesting question come to my mind is, do I correctly remove the variable? In specific, the removal of variables should be quantitatively determined by statistical techniques. More importantly, since the feature selection was processed by random forest importance, it perhaps causes the highest accuracy, sensitivity, and specificity for random forest classification method. Whereas, the opinion was not supported by appropriate theoretical evidence, so the further researches are in need of. 
+
+While detecting the several potential issue with the models, the results that interpret the data are also significant. As mentioned before, I am trying to construct a best model to predict house price class for individuals¡¯ usage, the best model was found is random forest. Therefore, by way of example, if a person want to purchase house in the King County, but he does not have idea that how much money he should prepare for, then, this model of random forest is useful in this case. The person need to provide the feature data of the house that he desired, such as, Square feet of home (sqft_living), square feet of lot (sqft_lot), grade, and location (zip code (zipcode), latitude (lat), longitude (long)), living room area in 2015 (sqft_living15), and lot size in 2015 (sqft_lot15), the best model in this project will have approximately 76% opportunities to predict the correct house price class, which is the amount of money that the person should use for purchasing the house. In general, constructing this best model is aiming to prepare house buyers for pre-planning. 
+
+
+#5. Appendix
+
+"Any Models are Wrong": referenced from https://en.wikipedia.org/wiki/All_models_are_wrong
+
+The detailed data structure and variables description are listed below (Some are explained **Introduction** section):
+
+```{r}
+str(data)
+```
+
+
+id: a notation for a house
+
+date: Date house was sold
+
+
+price: Price is prediction target
+
+
+bedrooms: Number of Bedrooms/House
+
+
+bathrooms: Number of bathrooms/bedrooms
+
+
+sqft_living: square footage of the home
+
+
+sqft_lot: square footage of the lot
+
+
+floors: Total floors (levels) in house
+
+
+waterfront: House which has a view to a waterfront
+
+
+view: Has been viewed
+
+
+condition: How good the condition is ( Overall )
+
+
+grade: overall grade given to the housing unit, based on King County grading system
+
+
+sqft_above: square footage of house apart from basement
+
+
+sqft_basement: square footage of the basement
+
+
+yr_built: Built Year
+
+
+yr_renovated: Year when house was renovated
+
+
+zipcode: zip
+
+
+lat: Latitude coordinate
+
+
+long: Longitude coordinate
+
+
+sqft_living15: Living room area in 2015(implies-- some renovations) This might or might not have affected the lotsize area
+
+
+sqft_lot15: lotSize area in 2015(implies-- some renovations)
+
+
+
+

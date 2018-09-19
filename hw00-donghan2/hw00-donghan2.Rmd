@@ -1,0 +1,132 @@
+---
+title: "hw00-donghan2"
+author: "Liu, Donghan, Donghan2"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: readable
+    toc: yes  
+  pdf_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Solution
+
+##Exercise 1
+###Exercise 1a
+```{r}
+#install.packages("faraway")
+library(faraway)
+data(diabetes)
+```
+
+###Exercise 1b
+```{r}
+#install.packages("tibble")
+library(tibble)
+diabete = as_tibble(diabetes)
+diabete
+?diabetes
+```
+
+As the table shows that there are 403 observations and 19 variables. The individuals are 403 African Americans in Virginia, as shown in the datasets help. 
+
+
+###Exercise 1c
+```{r}
+mean(diabete$hdl)
+mean(diabete$hdl,na.rm = TRUE)
+```
+
+Since the dataset contains nan value(mean = NA), we have to remove them before doing calculations. 
+
+###Exercise 1d
+```{r}
+mean(diabete$hdl[diabete$gender == 'female'])
+```
+
+###Exercise 1e
+```{r}
+lines(scatter.smooth(diabete$weight,diabete$chol, col="blue", lty=1, lwd=2,xlab = 'Weight',ylab = 'Cholesterol',main = 'The Graph of  Cholesterol vs Weight'))
+```
+
+As seen the trend line in the graph, it is very flat and only small curve in the plot, so the relationship is not obvious. 
+
+###Exercise 1f
+
+```{r}
+boxplot(hdl~gender,data = diabete,col = 'lightblue',xlab = 'Gender',ylab = 'High Density Lipoprotein',main = 'The Box Plot of High Density Lipoprotein vs Gender',border = 'blue')
+```
+
+
+Regarding the variation, the female's is smaller than the male's, thus, there might be some slight difference between female and male with respect in High Density Lipooprotein.
+
+##Exercise 2
+###Exercise 2a
+```{r}
+nutri = read.csv("c:/Users/Hans/Desktop/nutrition.csv")
+hist(nutri$Calories,col = 'lightblue',main = 'Histogram of Calories',xlab = 'Calories')
+```
+
+
+The overall shape is as the amount of calories increases, the frequency become smaller. The frequency from 0-50 cal and 50-100 cal is pretty simliar, however, from the boarder perspective, 50-100 cal's frequency should be lower than 0-50's. In addition, the range from 350-400 and from 900-950 have an abrupt hump, which will have influnce on the trend of the histogram. 
+
+###Exercise 2b
+```{r}
+scatter.smooth(x = 4 * nutri$Protein + 4 * nutri$Carbs + 9 * nutri$Fat + 2 * nutri$Fiber,y = nutri$Calories,col = 'lightblue',lpars = list(col = 'red'),main = 'Graph of Calories vs Protein',xlab = 'Protein',ylab = 'Calories')
+```
+
+Even though the red line seems like a staight line, but there are unusual phenomenon appears, which was indicted above. Plus, from the formula regarding the food component to generate calories, ethanol, organic acids, and polyols are not considered. Also, the inaccurate data might cause the same issue. 
+
+
+##Exercise 3
+###Exercise 3a
+
+```{r}
+a = 1:10
+b = 10:1
+c = rep(1, times = 10)
+d = 2 ^ (1:10)
+
+sum_of_squares = function(x){
+  y = 0
+  for (i in x){
+    y = y + i^2
+  }
+  return(y)
+}
+sum_of_squares(x = a)
+sum_of_squares(x = c(c, d))
+```
+
+###Exercise 3b
+```{r}
+rms_diff = function(x,y){
+  return(sqrt((1/length(x))*sum((x-y)^2)))
+}
+rms_diff(x = a, y = b)
+rms_diff(x = d, y = c)
+rms_diff(x = d, y = 1)
+rms_diff(x = a, y = 0) ^ 2 * length(a)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

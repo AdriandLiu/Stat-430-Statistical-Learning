@@ -1,0 +1,214 @@
+---
+title: "hw01-donghan2"
+author: "Liu, Donghan, Donghan2"
+date: "Feb 2, 2018"
+output:
+  html_document:
+    theme: readable
+    toc: yes
+  pdf_document:
+    toc: yes
+---
+
+```{r global_options, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE,message = FALSE, warning = FALSE)
+```
+
+```{r}
+hw01_trn_data = read.csv("hw01-trn-data.csv")
+hw01_tst_data = read.csv("hw01-tst-data.csv")
+#install.packages('FNN')
+#install.packages('kableExtra')
+library(FNN)
+library(rpart)
+library(knitr)
+library(kableExtra)
+```
+
+
+##Exercise 1 (Polynomial Models)
+
+```{r}
+data = hw01_trn_data
+fit1 = lm(y ~ poly(x, 1),data = data)
+fit3 = lm(y ~ poly(x, 3),data = data)
+fit5 = lm(y ~ poly(x, 5),data = data)
+fit7 = lm(y ~ poly(x, 7),data = data)
+fit9 = lm(y ~ poly(x, 9),data = data)
+rmsepoly = function(data,data1){
+  calc_rmse = function(actual, predicted) {
+    sqrt(mean((actual - predicted) ^ 2))
+  }
+  predict1 = predict(fit1,data1)
+  predict3 = predict(fit3,data1)
+  predict5 = predict(fit5,data1)
+  predict7 = predict(fit7,data1)
+  predict9 = predict(fit9,data1)
+  
+  predict0 = data.frame(predict1=predict1,predict3=predict3,predict5=predict5,predict7=predict7,predict9=predict9)
+  rmse1 = c()
+  for (i in 1:5){
+    rmse1[i] = calc_rmse(data1$y,predict0[i])
+  }
+  return (rmse1)
+}
+
+plot(x = seq(1,9,2), y = rmsepoly(data = hw01_trn_data, data1 = hw01_trn_data),xlab = 'Polynomial Degrees',ylab = 'RMSE',main = 'RMSE vs. Polynomial Degrees',col = 'blue')
+lines(x = seq(1,9,2), y = rmsepoly(data = hw01_trn_data, data1 = hw01_trn_data),col = 'blue')
+
+points(x = seq(1,9,2), y = rmsepoly(data = hw01_trn_data, data1 = hw01_tst_data),col = 'red')
+lines(x = seq(1,9,2), y = rmsepoly(data = hw01_trn_data, data1 = hw01_tst_data),col = 'red')
+
+legend('topright',legend = c("RMSE Train","RMSE Test"),col = c('blue','red'),lty = 1)
+```
+
+##Exercise 2 (KNN Models)
+
+```{r}
+rmseknn= function(data,data1){
+  calc_rmse = function(actual, predicted) {
+    sqrt(mean((actual - predicted) ^ 2))
+  }
+  
+  fit1 = knn.reg(train = data["x"], test = data1["x"], y = data["y"], k =  1)$pred
+  fit11 = knn.reg(train = data["x"], test = data1["x"], y = data["y"], k =  11)$pred
+  fit21 = knn.reg(train = data["x"], test = data1["x"], y = data["y"], k =  21)$pred
+  fit31 = knn.reg(train = data["x"], test = data1["x"], y = data["y"], k =  31)$pred
+  fit41 = knn.reg(train = data["x"], test = data1["x"], y = data["y"], k =  41)$pred
+  
+  predict = data.frame(fit1,fit11,fit21,fit31,fit41)
+  rmse1 = c()
+  for (i in 1:5){
+    rmse1[i] = calc_rmse(data1['y'],predict[i])
+  }
+  return (rmse1)
+}
+
+table = data.frame(K =
+             c(1,11,21,31,41),RMSE_Train = rmseknn(hw01_trn_data,hw01_trn_data),RMSE_Test = rmseknn(hw01_trn_data,hw01_tst_data))
+
+kable_styling(kable(table, format = "html", digits = 2), full_width = FALSE)
+
+```
+
+##Exercise 3 (Tree Models)
+
+```{r}
+rmsetree = function(data,data1){
+  calc_rmse = function(actual, predicted) {
+    sqrt(mean((actual - predicted) ^ 2))
+  }
+  fit0 = rpart(y ~ x, data = data, control = rpart.control(cp = 0, minsplit = 2))
+  fit0001 = rpart(y ~ x, data = data, control = rpart.control(cp = 0.001, minsplit = 2))
+  fit001 = rpart(y ~ x, data = data, control = rpart.control(cp = 0.01, minsplit = 2))  
+  fit01 = rpart(y ~ x, data = data, control = rpart.control(cp = 0.1, minsplit = 2))
+  fit1 = rpart(y ~ x, data = data, control = rpart.control(cp = 1, minsplit = 2))
+  
+  predict0 = predict(fit0,data1['x'])
+  predict0001 = predict(fit0001,data1['x'])
+  predict001 = predict(fit001,data1['x'])
+  predict01 = predict(fit01,data1['x'])
+  predict1 = predict(fit1,data1['x'])
+  
+  predict = data.frame(predict0,predict0001,predict001,predict01,predict1)
+  rmse1 = c()
+  for (i in 1:5){
+    rmse1[i] = calc_rmse(data1['y'],predict[i])
+  }
+  return (rmse1)
+}
+
+tabletree = data.frame(Cp = c(0,0.001,0.01,0.1,1), RMSE_Train = rmsetree(hw01_trn_data,hw01_trn_data), RMSE_Test = 
+rmsetree(hw01_trn_data,hw01_tst_data))
+
+kable_styling(kable(tabletree, format = "html", digits = 2), full_width = FALSE)
+```
+
+
+##Exercise 4 (Visualizing Results)
+
+Since the lower RMSE is, the predicted model is more accurate, so we would like to choose 5 as polynomial degrees for poly model, k = 11 as number of neighbors in KNN model, and cp = 0.01 for the tree models.
+
+```{r}
+plot(y ~ x, data = hw01_trn_data, col = "darkgrey", pch = 20,
+     main = "Homework 01, Training Data")
+grid()
+
+temp_grid = data.frame(x = seq(from = min(hw01_trn_data$x) - 5, to = max(hw01_trn_data$x) + 5, by  = 0.01))
+
+fit5 = lm(y ~ poly(x, 5),data = hw01_trn_data)
+poly_pred_plot = predict(fit5,temp_grid)
+
+fit41 = knn.reg(train = hw01_trn_data["x"], test = temp_grid["x"], y = hw01_trn_data["y"], k =  11)$pred
+
+fit1 = rpart(y ~ x, data = hw01_trn_data, control = rpart.control(cp = 0.01, minsplit = 2))
+predict1 = predict(fit1,temp_grid['x'])
+
+
+lines(temp_grid$x,poly_pred_plot, col = 'cyan',lty = 1)
+lines(temp_grid$x,fit41, col = 'blue',lty = 2)
+lines(temp_grid$x,predict1, col = 'red',lty = 3)
+legend("topleft", c("Poly", "KNN",'Tree'), lty = c(2, 1,3), lwd = 2, col = c("cyan", "blue",'red'),cex = 1)
+```
+
+
+##Exercise 5 (Concept Checks)
+
+
+From the plot in exercise 4, we could see the model fitting of poly with degree of 5, KNN model with k = 11 and tree model with cp = 0.01. We will check the overfitting and underfitting for the rest of models.
+
+
+a b. 
+```{r}
+poly_plot = function(i){
+  temp_grid = data.frame(x = seq(from = min(hw01_trn_data$x) - 5, to = max(hw01_trn_data$x) + 5, by  = 0.01))
+  fit = lm(y ~ poly(x, i),data = hw01_trn_data)
+  poly_pred_plot = predict(fit,temp_grid)
+  plot(y ~ x, data = hw01_trn_data, col = "darkgrey", pch = 20,main = gsub('this',i,"Poly: Training Data Trendline for degree of this"))
+  lines(temp_grid$x,poly_pred_plot, col = 'orange',lty = 2)
+}
+par(mfrow = c(2, 2))
+poly_plot(1)
+poly_plot(3)
+poly_plot(7)
+poly_plot(9)
+```
+
+According to the above tables, when poly degree = 1 or 3, the trendline does not fit the original value well, so they are likely to have underfitting. 7 and 9 are likely be considered as overfitting.
+
+c d.
+```{r}
+knn_plot = function(k){
+  temp_grid = data.frame(x = seq(from = min(hw01_trn_data$x) - 5, to = max(hw01_trn_data$x) + 5, by  = 0.01))
+  fit = knn.reg(train = hw01_trn_data["x"], test = temp_grid["x"], y = hw01_trn_data["y"], k =  k)$pred
+  plot(y ~ x, data = hw01_trn_data, col = "darkgrey", pch = 20,main = gsub('this',k,"KNN: Training Data Trendline for k = this"))
+  lines(temp_grid$x,fit, col = 'blue',lty = 1)
+}
+par(mfrow = c(2, 2))
+knn_plot(1)
+knn_plot(21)
+knn_plot(31)
+knn_plot(41)
+```
+
+The above tables state that the model is overfitting when number of neighbors = 1 and underfitting when number of neighbors = 31 or 41 or 21.
+
+e f.
+```{r}
+tree_plot = function(cp){
+  temp_grid = data.frame(x = seq(from = min(hw01_trn_data$x) - 5, to = max(hw01_trn_data$x) + 5, by  = 0.01))
+  fit = rpart(y ~ x, data = hw01_trn_data, control = rpart.control(cp = cp, minsplit = 2))
+  predict1 = predict(fit,temp_grid['x'])
+  plot(y ~ x, data = hw01_trn_data, col = "darkgrey", pch = 20,main = gsub('this',cp,"Tree: Train Data Trendline for cp = this"))
+  lines(temp_grid$x,predict1, col = 'red',lty = 3)
+}
+par(mfrow = c(2, 2))
+tree_plot(0)
+tree_plot(0.001)
+tree_plot(0.1)
+tree_plot(1)
+```
+
+When cp = 0 or 0.001, the model does not look good and likely to have an issue of overfitting. Whereas, the model of cp = 0.1 or 1 is facing the issue of underfitting.
+
+

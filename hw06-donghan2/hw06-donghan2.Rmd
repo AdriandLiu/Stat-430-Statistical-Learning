@@ -1,0 +1,248 @@
+---
+title: "hw06-donghan2"
+author: "Liu, Donghan, Donghan2"
+date: "03/16/2018"
+output:
+  html_document:
+    theme: readable
+    toc: yes
+  word_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,warning=FALSE,message=FALSE}
+# general
+library(MASS)
+library(caret)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(mlbench)
+
+# specific
+library(randomForest)
+library(gbm)
+library(klaR)
+library(ellipse)
+```
+
+
+```{r}
+data(Boston, package = "MASS")
+set.seed(1)
+bstn_idx = createDataPartition(Boston$medv, p = 0.75, list = FALSE)
+bstn_trn = Boston[bstn_idx, ]
+bstn_tst = Boston[-bstn_idx, ]
+```
+
+##Exercise 1 (Tuning KNN Regression with  caret)
+```{r}
+calc_rmse = function(actual, predicted) {
+  sqrt(mean((actual - predicted) ^ 2))
+}
+```
+
+```{r}
+set.seed(1337)
+k = c(1,5,10,15,20,25,30,35)
+knn1 = train(form = medv ~ ., 
+              data = bstn_trn,
+              trControl = trainControl(method = 'cv', number = 5),
+              method = 'knn',
+              tuneGrid = expand.grid(k = k))  
+knn2 = train(form = medv ~ ., 
+              data = bstn_trn,
+              trControl = trainControl(method = 'cv', number = 5),
+              method = 'knn',
+              tuneGrid = expand.grid(k = k),
+              preProcess = 'scale')
+par(mfrow = c(1,2))
+plot(knn1,ylim = c(4.5,8.5),main = "RMSE vs K without scaling")
+plot(knn2,ylim = c(4.5,8.5),main = "RMSE vs K with scaling")
+```
+
+
+##Exercise 2 (More Regression with caret)
+
+```{r}
+gbm_grid = expand.grid(interaction.depth = c(1, 2, 3),
+                       n.trees = (1:20) * 100,
+                       shrinkage = c(0.1, 0.3),
+                       n.minobsinnode = 20)
+```
+
+```{r, message= FALSE, warning=FALSE, results='hide'}
+set.seed(1337)
+add = train(form = medv ~ ., 
+              data = bstn_trn,
+              trControl = trainControl(method = 'cv', number = 5),
+              method = 'glm')
+
+rf = train(form = medv ~ ., 
+              data = bstn_trn,
+              trControl = trainControl(method = 'cv', number = 5),
+              method = 'rf')
+
+gbm = train(form = medv ~ .,
+              data = bstn_trn,
+              trControl = trainControl(method = 'cv', number = 5),
+              method = 'gbm',
+              tuneGrid = gbm_grid)
+```
+
+```{r}
+plot(gbm)
+```
+
+```{r}
+get_best_result = function(caret_fit) {
+  best = which(rownames(caret_fit$results) == rownames(caret_fit$bestTune))
+  best_result = caret_fit$results[best, ]
+  rownames(best_result) = NULL
+  best_result
+}
+```
+
+```{r}
+rmse1 = calc_rmse(bstn_tst$medv, predict(add,bstn_tst))
+rmse2 = calc_rmse(bstn_tst$medv, predict(rf,bstn_tst))
+rmse3 = calc_rmse(bstn_tst$medv, predict(gbm,bstn_tst))
+rmse4 = calc_rmse(bstn_tst$medv, predict(knn1,bstn_tst))
+rmse5 = calc_rmse(bstn_tst$medv, predict(knn2,bstn_tst))
+
+
+best_rmse1 = get_best_result(add)$RMSE
+best_rmse2 = get_best_result(rf)$RMSE
+best_rmse3 = get_best_result(gbm)$RMSE
+best_rmse4 = get_best_result(knn1)$RMSE
+best_rmse5 = get_best_result(knn2)$RMSE
+
+results = data.frame(Model = c("Additive","Random Forest","Boosted Tree", "KNN without Scalling", "KNN with Scalling"),Cross_Validation_RMSE = c(best_rmse1,best_rmse2,best_rmse3,best_rmse4,best_rmse5), RMSE = c(rmse1,rmse2,rmse3,rmse4,rmse5))
+
+kable_styling(kable(results, format = "html", digits = 3), full_width = FALSE)
+
+```
+
+##Exercise 3 (Clasification with caret)
+
+```{r}
+set.seed(42)
+# simulate data using mlbench
+sim_trn = mlbench.2dnormals(n = 500, cl = 7, r = 10, sd = 3)
+# create tidy data
+sim_trn = data.frame(
+  classes = sim_trn$classes,
+  sim_trn$x 
+)
+featurePlot(x = sim_trn[, -1], 
+            y = sim_trn$classes, 
+            plot = "ellipse",
+            auto.key = list(columns = 2),
+            par.settings = list(superpose.symbol = list(pch = 1:9))
+)
+```
+
+```{r}
+set.seed(1337)
+
+lda = train(form = classes ~ .,data = sim_trn,
+            trControl = trainControl(method = 'cv', number = 10),
+            method = 'lda')
+
+qda = train(form = classes ~ .,data = sim_trn,
+            trControl = trainControl(method = 'cv', number = 10),
+            method = 'qda')
+
+nb = train(form = classes ~ .,data = sim_trn,
+            trControl = trainControl(method = 'cv', number = 10),
+            method = 'nb')
+
+rda = train(form = classes ~ .,data = sim_trn,
+            trControl = trainControl(method = 'cv', number = 10),
+            method = 'rda')
+
+grid = expand.grid(mtry = c(1,2))
+rf = train(form = classes ~ .,data = sim_trn,
+            trControl = trainControl(method = 'cv', number = 10),
+            method = 'rf',
+           tuneGrid = grid)
+
+plot(rda)
+
+```
+
+```{r}
+results = data.frame(Model = c("LDA","QDA","Naive Bayes","RDA","Random Forest"), Accuracy = c(get_best_result(lda)$Accuracy
+,get_best_result(qda)$Accuracy
+,get_best_result(nb)$Accuracy
+,get_best_result(rda)$Accuracy
+,get_best_result(rf)$Accuracy
+), AccuracySD = c(get_best_result(lda)$AccuracySD
+,get_best_result(qda)$AccuracySD
+,get_best_result(nb)$AccuracySD
+,get_best_result(rda)$AccuracySD
+,get_best_result(rf)$AccuracySD
+))
+kable_styling(kable(results, format = "html", digits = 4), full_width = FALSE)
+
+```
+
+##Exercise 4
+###Regression
+
+**(a)** 
+
+From the RMSE plot, I would choose k = 5 for KNN without predictor scaling
+
+**(b)**
+
+The plot shows when k = 1, the RMSE is lowest with predictor scaling
+
+**(c)**
+
+```{r}
+gbm$bestTune
+```
+
+From the above table, the number of trees is 800, interaction.depth is 2, shrinkage is 0.1, and number of minobsinnode is 20
+
+
+**(d)**
+
+The model of random forest has the lowest cross-validation RMSE value, which is 3.336
+
+**(e)**
+
+The boosted tree model has the lowest test error, which is 3.557
+
+###Classification
+
+**(f)**
+
+```{r}
+rda$bestTune
+```
+
+From the above table, the tuning parameters with gamma of 0.5 and lambda = 0 are chosen for RDA model
+
+**(g)**
+
+I believe QDA is more appropriate here because the ellipse plot shows that they has the different shape and different loacation
+
+**(h)**
+
+I believe QDA is more appropriate than Naive Bayes since they are not completely seperated and there is some overlaps, so QDA seems appropriate here.
+
+**(i)**
+
+The model of Naive Bayes has the hightest (best) cross-validated accuracy
+
+**(j)**
+
+I do not believe so because accuracy standard deviation of Naive Bayes is the highest one. However, RDA could be chose instead since it has the lowest standard deviation and relatively high accuracy. 

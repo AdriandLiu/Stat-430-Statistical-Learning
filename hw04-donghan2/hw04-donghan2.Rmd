@@ -1,0 +1,198 @@
+---
+title: "hw04-donghan2"
+author: "Liu, Donghan, Donghan2"
+date: "2/21/2018"
+output:
+  html_document:
+    theme: readable
+    toc: yes
+  word_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+
+```{r,message = FALSE, warning = FALSE}
+# general
+set.seed(1)
+library(caret)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+
+# specific
+library(ISLR)
+library(pROC)
+```
+
+```{r}
+data(Auto)
+Auto = subset(Auto, select = -c(name))
+Auto$origin = factor(Auto$origin)
+Auto$cylinders = factor(Auto$cylinders)
+Auto$mpg = factor(ifelse(Auto$mpg < 30, "low", "high"))
+```
+
+```{r}
+auto_trn_idx  = sample(nrow(Auto), size = trunc(0.75 * nrow(Auto)))
+auto_trn_data = Auto[auto_trn_idx, ]
+auto_tst_data = Auto[-auto_trn_idx, ]
+```
+
+
+#Solution
+
+##Exercise 1
+
+```{r,message = FALSE, warning = FALSE}
+glm_inter = glm(mpg ~ 1, data = auto_trn_data, family = "binomial")
+glm_hp = glm(mpg ~ horsepower,data = auto_trn_data, family = "binomial")
+glm_multi = glm(mpg ~ horsepower + origin, data = auto_trn_data, family = "binomial")
+glm_add = glm(mpg ~ . ,data = auto_trn_data, family = "binomial")
+glm_interac = glm(mpg ~ .^2, data = auto_trn_data, family = "binomial")
+```
+
+```{r,message = FALSE, warning = FALSE}
+errorRate = function(data1){  
+  calc_class_err = function(actual, predicted) {
+    mean(actual != predicted)
+  }
+  
+  get_logistic_error = function(mod, data1, res, pos, neg, cut = 0.5) {
+    probs = predict(mod, newdata = data1, type = "response")
+    preds = ifelse(probs > cut, pos, neg)
+    calc_class_err(actual = data1[, res], predicted = preds)
+  }
+  
+  model = list(glm_inter,glm_hp,glm_multi,glm_add,glm_interac)
+  error = c()
+  for (i in 1:length(model)){
+    error = c(error, get_logistic_error(model[[i]], data1 = data1, 
+                 res = "mpg", pos = "low", neg = "high", cut = 0.5))
+  }
+  return (error)
+}
+
+results = data.frame(Model = c("`Intercept: mpg ~ 1`",
+                               "`Simple: mpg ~ horsepower`",
+                               "`Multiple: mpg ~ horsepower + euro + japan`",
+                               "`Additive: mpg ~ .`",
+                               "`Interaction: mpg ~ .^2`"),Logistic_Error_Train = errorRate(auto_trn_data), 
+                                              Logistic_Error_Test = errorRate(auto_tst_data))
+kable_styling(kable(results, format = "html", digits = 4), full_width = FALSE)
+
+###RUN FROM LOCAL R STUDIO WINDOWS SYSTEM
+```
+
+##Exercise 2
+
+```{r}
+wisc_trn = read.csv("wisc-trn.csv")
+wisc_tst = read.csv("wisc-tst.csv")
+```
+
+```{r}
+model_misc = glm(class ~ radius + symmetry, data = wisc_trn, family = "binomial")
+
+get_logistic_pred = function(mod, data, res, pos, neg, cut) {
+    probs = predict(mod, newdata = data, type = "response")
+    ifelse(probs > cut, pos, neg)
+  }
+  
+acc_sen_spec = function(c){
+  test_pred = get_logistic_pred(model_misc, data = wisc_tst, res = "class", 
+                                 pos = "M", neg = "B", cut = c)
+  test_tab = table(predicted = test_pred, actual = wisc_tst$class)
+  library(caret)
+  library(e1071)
+  test_con_mat = confusionMatrix(test_tab, positive = "M")
+  
+  c(test_con_mat$overall["Accuracy"], 
+  test_con_mat$byClass["Sensitivity"], 
+  test_con_mat$byClass["Specificity"])
+}
+
+
+metrics = rbind.data.frame(acc_sen_spec(0.1),acc_sen_spec(0.5),acc_sen_spec(0.9))
+rownames(metrics) = c("c = 0.10", "c = 0.50", "c = 0.90")
+colnames(metrics) = c("Accuracy","Sensitivity","Specificity")
+kable_styling(kable(metrics, format = "html", digits = 3), full_width = FALSE)
+```
+
+
+##Exercise 3
+
+```{r}
+par(mfrow=c(1,2))
+c = seq(0.01, 0.99, by = 0.01)
+
+value = matrix(nrow = length(c),ncol = 3)
+for (i in 1:length(c)){
+  value[i,1:3] = acc_sen_spec(c[i])
+}
+
+plot(c,value[,1],type = 'l', ylim = c(0.3,1), col = 'blue', xlab = 'Cut-off Value',ylab = 'Test Rate', main = 'Test Rate vs Cut-off Value')
+points(c,value[,2],type = 'l',lty = 8, col = 'orange')
+points(c,value[,3],type = 'l',lty = 3, col = 'red')
+legend(0.4,0.5,legend = c('Accuracy','Sensitivity','Specificity'),fill = c('blue','orange','red'),lty = c(1,8,3),cex=0.7)
+  
+library(pROC)
+test_prob = predict(model_misc, newdata = wisc_tst, type = "response")
+test_roc = roc(wisc_tst$class ~ test_prob, plot = TRUE, print.auc = TRUE, main = 'ROC')
+```
+
+
+##Exercise 4
+
+```{r}
+plot(symmetry ~ radius, data = wisc_tst, col = c('red','blue')[wisc_tst$class], main = "Symmetry vs Radius")
+model4 = glm(class ~ radius + symmetry, data = wisc_trn, family = "binomial")
+slope = coef(model4)[2]/(-coef(model4)[3])
+intercept = coef(model4)[1]/(-coef(model4)[3]) 
+abline(intercept,slope)
+legend('bottomright',legend = c('M','B'), fill = c('blue','red'))
+```
+
+
+##Exercise 5
+
+###a
+
+```{r}
+glm_multi$coefficients
+```
+
+$\hat{\beta_2}$ = 0.1243737
+
+###b
+
+The model of Additive perform the best because of the lowest error in both train and test data.
+
+###c
+
+Intercept, Simple, and Multiple model might be underfitting because of the relatively larger error for both train and test data.
+
+###d
+
+The model of Interaction is overfitting, since it has lower error in train data but higher error in test data
+
+###e
+
+c = 0.5 would be the best case. 
+
+###f
+
+The classifiers of c = 0.5 has the highest **accuracy**. Since we want the classifier works well to classify the data, the accuracy would be a vital feature to diagnose the performance of the classifier. Plus, it is relatively high **sensitivity** or **specificity** respectively corresponding to c = 0.9 or c = 0.1.
+
+
+
+
+
+
+
+

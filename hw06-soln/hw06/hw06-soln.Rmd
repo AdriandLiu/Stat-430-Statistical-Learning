@@ -1,0 +1,363 @@
+---
+title: "STAT 432 Homework 06"
+author: "Spring 2018 | Dalpiaz | UIUC"
+date: '**Due:** Friday, March 16, 11:59 PM'
+---
+
+***
+
+For this homework, you may only use the following packages:
+
+```{r, message = FALSE, warning = FALSE}
+# general
+library(MASS)
+library(caret)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(mlbench)
+
+# specific
+library(randomForest)
+library(gbm)
+library(klaR)
+library(ellipse)
+```
+
+***
+
+# Exercise 1 (Tuning KNN Regression with `caret`)
+
+**[6 points]** For this exercise we will train KNN regression models for the `Boston` data from the `MASS` package. Use `medv` as the response and all other variables as predictors. Use the test-train split given below. When tuning models and reporting cross-validated error, use 5-fold cross-validation.
+
+```{r}
+data(Boston, package = "MASS")
+set.seed(1)
+bstn_idx = createDataPartition(Boston$medv, p = 0.75, list = FALSE)
+bstn_trn = Boston[bstn_idx, ]
+bstn_tst = Boston[-bstn_idx, ]
+```
+
+Consider $k \in \{1, 5, 10, 15, 20, 25, 30, 35\}$ and two pre-processing setups:
+
+  - Do **not** scale the predictors.
+  - **Do** scale the predictors.
+
+Provide plots of cross-validated error versus tuning parameters for both KNN pre-processing setups. Use the same value on the $y$ axis for both plots. (You can be lazy and let `caret` create these plots. Since it will use `lattice` plotting, putting them side-by-side, or on the same plot would be difficult.)
+
+**Solution:**
+
+```{r, solution = TRUE}
+set.seed(1337)
+bstn_knnu_mod = train(
+  medv ~ .,
+  data = bstn_trn,
+  trControl = trainControl(method = "cv", number = 5),
+  method = "knn",
+  tuneGrid = expand.grid(k = c(1, 5, 10, 15, 20, 25, 30, 35))
+)
+```
+
+```{r, solution = TRUE}
+set.seed(1337)
+bstn_knns_mod = train(
+  medv ~ .,
+  data = bstn_trn,
+  trControl = trainControl(method = "cv", number = 5),
+  preProcess = c("center", "scale"),
+  method = "knn",
+  tuneGrid = expand.grid(k = c(1, 5, 10, 15, 20, 25, 30, 35))
+)
+```
+
+```{r, solution = TRUE, echo = FALSE, fig.align = "center", fig.width = 8, fig.height = 4}
+print(plot(bstn_knnu_mod, main = "KNN, Unscaled", ylim = c(4, 8.5)), position = c(0, 0, 0.5, 1), more = TRUE)
+print(plot(bstn_knns_mod, main = "KNN, Scaled", ylim = c(4, 8.5)), position = c(0.5, 0, 1, 1))
+```
+
+***
+
+# Exercise 2 (More Regression with `caret`)
+
+**[7 points]** For this exercise we will train more regression models for the `Boston` data from the `MASS` package. Use `medv` as the response and all other variables as predictors. Use the test-train split given previously. When tuning models and reporting cross-validated error, use 5-fold cross-validation.
+
+Traing a total of three new models:
+
+- An additive linear regression
+- A random forest 
+    - Use the default tuning parameters chosen by `caret`
+- A boosted tree model (Use `gbm`)
+    - Use the provided tuning grid below
+
+```{r}
+gbm_grid = expand.grid(interaction.depth = c(1, 2, 3),
+                       n.trees = (1:20) * 100,
+                       shrinkage = c(0.1, 0.3),
+                       n.minobsinnode = 20)
+```
+
+Provide plots of error versus tuning parameters for the the boosted tree model. Also provide a table that summarizes the cross-validated and test RMSE for each of the three (tuned) models as well as the two models tuned in the previous exercise.
+
+**Solution:**
+
+```{r, solution = TRUE}
+set.seed(1337)
+bstn_lm_mod = train(
+  medv ~ .,
+  data = bstn_trn,
+  trControl = trainControl(method = "cv", number = 5),
+  method = "lm"
+)
+```
+
+```{r, solution = TRUE}
+set.seed(1337)
+bstn_rf_mod = train(
+  medv ~ .,
+  data = bstn_trn,
+  trControl = trainControl(method = "cv", number = 5),
+  method = "rf"
+)
+```
+
+```{r, solution = TRUE}
+set.seed(1337)
+bstn_gbm_mod = train(
+  medv ~ .,
+  data = bstn_trn,
+  trControl = trainControl(method = "cv", number = 5),
+  method = "gbm",
+  tuneGrid = gbm_grid,
+  verbose = FALSE
+)
+```
+
+```{r, solution = TRUE, echo = FALSE, fig.align = "center"}
+plot(bstn_gbm_mod, main = "Boosted Trees")
+```
+
+```{r, solution = TRUE, echo = FALSE}
+calc_rmse = function(actual, predicted) {
+  sqrt(mean((actual - predicted) ^ 2))
+}
+```
+
+```{r, solution = TRUE, echo = FALSE}
+get_best_result = function(caret_fit) {
+  best = which(rownames(caret_fit$results) == rownames(caret_fit$bestTune))
+  best_result = caret_fit$results[best, ]
+  rownames(best_result) = NULL
+  best_result
+}
+```
+
+```{r, solution = TRUE, echo = FALSE}
+reg_results = data.frame(
+  method = c("Linear Regression", "KNN, Unscaled", "KNN, Scaled", 
+             "Random Forest", "Boosted Trees"),
+  cv = c(
+    get_best_result(bstn_lm_mod)$RMSE,
+    get_best_result(bstn_knnu_mod)$RMSE,
+    get_best_result(bstn_knns_mod)$RMSE,
+    get_best_result(bstn_rf_mod)$RMSE,
+    get_best_result(bstn_gbm_mod)$RMSE
+  ),
+  test = c(
+    calc_rmse(bstn_tst$medv, predict(bstn_lm_mod, bstn_tst)),
+    calc_rmse(bstn_tst$medv, predict(bstn_knnu_mod, bstn_tst)),
+    calc_rmse(bstn_tst$medv, predict(bstn_knns_mod, bstn_tst)),
+    calc_rmse(bstn_tst$medv, predict(bstn_rf_mod, bstn_tst)),
+    calc_rmse(bstn_tst$medv, predict(bstn_gbm_mod, bstn_tst))
+  )
+)
+colnames(reg_results) = c("Method", "CV RMSE", "Test RMSE")
+kable_styling(kable(reg_results, format = "html", digits = 2), full_width = FALSE)
+```
+
+***
+
+# Exercise 3 (Clasification with `caret`)
+
+**[7 points]** For this exercise we will train a number of classifiers using the training data generated below. The categorical response variable is `classes` and the remaining variables should be used as predictors. When tuning models and reporting cross-validated error, use 10-fold cross-validation. We will not use a test set for this exercise.
+
+```{r}
+set.seed(42)
+# simulate data using mlbench
+sim_trn = mlbench.2dnormals(n = 500, cl = 7, r = 10, sd = 3)
+# create tidy data
+sim_trn = data.frame(
+  classes = sim_trn$classes,
+  sim_trn$x
+)
+```
+
+```{r fig.height = 7, fig.width = 7, fig.align = "center"}
+featurePlot(x = sim_trn[, -1], 
+            y = sim_trn$classes, 
+            plot = "pairs",
+            auto.key = list(columns = 2),
+            par.settings = list(superpose.symbol = list(pch = 1:9))
+)
+```
+
+Fit a total of five models:
+
+- LDA
+- QDA
+- Naive Bayes
+- Regularized Discriminant Analysis (RDA)
+    - Use method `rda` with `caret` which requires the `klaR` package
+    - Use the default tuning grid
+- Random Forest
+    - Use a tuning grid that considers `mtry` values of `1` and `2`
+
+Provide a plot of acuracy versus tuning parameters for the RDA model. Also provide a table that summarizes the cross-validated accuracy and their standard deviations for each of the five (tuned) models.
+
+**Solution:**
+
+```{r, solution = TRUE}
+set.seed(1337)
+sim_lda_mod = train(
+  classes ~ .,
+  data = sim_trn,
+  trControl = trainControl(method = "cv", number = 10),
+  method = "lda"
+)
+```
+
+```{r, solution = TRUE}
+set.seed(1337)
+sim_qda_mod = train(
+  classes ~ .,
+  data = sim_trn,
+  trControl = trainControl(method = "cv", number = 10),
+  method = "qda"
+)
+```
+
+```{r, solution = TRUE}
+set.seed(1337)
+sim_nb_mod = train(
+  classes ~ .,
+  data = sim_trn,
+  trControl = trainControl(method = "cv", number = 10),
+  method = "nb"
+)
+```
+
+```{r, solution = TRUE}
+set.seed(1337)
+sim_rda_mod = train(
+  classes ~ .,
+  data = sim_trn,
+  trControl = trainControl(method = "cv", number = 10),
+  method = "rda"
+)
+```
+
+```{r, solution = TRUE}
+set.seed(1337)
+sim_rf_mod = train(
+  classes ~ .,
+  data = sim_trn,
+  trControl = trainControl(method = "cv", number = 10),
+  method = "rf",
+  tuneGrid = expand.grid(mtry = c(1, 2))
+)
+```
+
+```{r, solution = TRUE, echo = FALSE, fig.align = "center"}
+plot(sim_rda_mod)
+```
+
+```{r, solution = TRUE, echo = FALSE}
+class_results = data.frame(
+    method = c("LDA", "QDA", "Naive Bayes", "RDA", "RF"),
+  cv = c(
+    get_best_result(sim_lda_mod)$Accuracy,
+    get_best_result(sim_qda_mod)$Accuracy,
+    get_best_result(sim_nb_mod)$Accuracy,
+    get_best_result(sim_rda_mod)$Accuracy,
+    get_best_result(sim_rf_mod)$Accuracy
+  ),
+  sd = c(
+    get_best_result(sim_lda_mod)$AccuracySD,
+    get_best_result(sim_qda_mod)$AccuracySD,
+    get_best_result(sim_nb_mod)$AccuracySD,
+    get_best_result(sim_rda_mod)$AccuracySD,
+    get_best_result(sim_rf_mod)$AccuracySD
+  )
+)
+colnames(class_results) = c("Method", "CV Acc", "SD CV Acc")
+kable_styling(kable(class_results, format = "html", digits = 3), full_width = FALSE)
+```
+
+***
+
+# Exercise 4 (Concept Checks)
+
+**[1 point each]** Answer the following questions based on your results from the three exercises. 
+
+## Regression
+
+**(a)** What value of $k$ is chosen for KNN without predictor scaling?
+
+```{r, solution = TRUE}
+bstn_knnu_mod$bestTune$k
+```
+
+
+**(b)** What value of $k$ is chosen for KNN **with** predictor scaling?
+
+```{r, solution = TRUE}
+bstn_knns_mod$bestTune$k
+```
+
+**(c)** What are the values of the tuning parameters chosen for the boosted tree regression model?
+
+```{r, solution = TRUE}
+bstn_gbm_mod$bestTune
+```
+
+**(d)** Which regression model achieves the lowest cross-validated error?
+
+```{r, solution = TRUE}
+reg_results[reg_results$`CV RMSE` == min(reg_results$`CV RMSE`), ]
+```
+
+**(e)** Which method achieves the lowest test error?
+
+```{r, solution = TRUE}
+reg_results[reg_results$`Test RMSE` == min(reg_results$`Test RMSE`), ]
+```
+
+## Classification
+
+**(f)** What are the values of the tuning parameters chosen for the RDA model?
+
+```{r, solution = TRUE}
+sim_rda_mod$bestTune
+```
+
+**(g)** Based on the scatterplot, which method, LDA or QDA, do you think is *more* appropriate? Explain.
+
+LDA. The covariance seems to be the same in each class.
+
+**(h)** Based on the scatterplot, which method, QDA or Naive Bayes, do you think is *more* appropriate? Explain.
+
+Naive Bayes. The predictors seem to be independent in each class.
+
+**(i)** Which model achieves the best cross-validated accuracy?
+
+```{r, solution = TRUE}
+class_results[class_results$`CV Acc` == max(class_results$`CV Acc`), ]
+```
+
+**(j)** Do you believe the model in **(i)** is the model that should be chosen? Explain.
+
+```{r, solution = TRUE}
+rda_res = class_results[class_results$`CV Acc` == max(class_results$`CV Acc`), ]
+rda_res$`CV Acc` - rda_res$`SD CV Acc`
+```
+
+No. The results of all the other model are within one SE. We should pick a less complex model, perhpas LDA or NB.

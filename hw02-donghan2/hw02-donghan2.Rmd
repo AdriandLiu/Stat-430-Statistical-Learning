@@ -1,0 +1,148 @@
+---
+title: "STAT 432 Homework 02"
+author: "Donghan Liu, Donghan2"
+date: "2/6/2018"
+output:
+  html_document:
+    theme: readable
+    toc: yes
+  word_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+#Solution
+
+
+```{r,message = FALSE, warning = FALSE}
+library(caret)
+library(randomForest)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+```
+
+```{r}
+data(Sacramento)
+sac_data = Sacramento
+sac_data$limits = factor(ifelse(sac_data$city == "SACRAMENTO", "in", "out"))
+sac_data = subset(sac_data, select = -c(city, zip))
+```
+
+```{r}
+qplot(y = longitude, x = latitude, data = sac_data, 
+      col = limits, main = "Sacramento City Limits ")
+qplot(x = price, data = sac_data, main = "Sacramento Home Prices")
+```
+
+```{r}
+set.seed(42)
+sac_trn_idx  = sample(nrow(sac_data), size = trunc(0.80 * nrow(sac_data)))
+sac_trn_data = sac_data[sac_trn_idx, ]
+sac_tst_data = sac_data[-sac_trn_idx, ]
+```
+
+##Exercise 1(Modeling Price, Without Location)
+```{r}
+fitall = lm(price ~ .-limits -latitude -longitude, data = sac_trn_data)
+fitsqft = lm(price ~ sqft, data = sac_trn_data)
+fit3sig = lm(price ~ sqft + factor(type), data = sac_trn_data)
+fitinter = lm(price ~ sqft + factor(type) + sqft * factor(type), data = sac_trn_data)
+```
+
+```{r}
+calc_lm_rmse = function(mod, data) {
+  actual = data$price
+  predicted = predict(mod, data)
+  sqrt(mean((actual - predicted) ^ 2))
+}
+mod_list = list(fitall, fitsqft, fit3sig, fitinter)
+trn_rmse = sapply(mod_list, calc_lm_rmse, data = sac_trn_data)
+tst_rmse = sapply(mod_list, calc_lm_rmse, data = sac_tst_data)
+
+results = data.frame(Model = c("`price ~ beds + baths + sqft + Residential + Multi_Family`",
+                               "`price ~ sqft`",
+                               "`price ~ sqft + Multi_Family + Residential`",
+                               "`price ~ sqft + Multi_Family + Residential + Multi_Family * sqft + Residential * sqft`"),Train_RMSE = trn_rmse, Test_RMSE = tst_rmse)
+kable_styling(kable(results, format = "html", digits = 3), full_width = FALSE)
+
+
+```
+
+##Exercise 2 (Modeling Price, With Location)
+
+```{r}
+add = lm(price ~ ., data = sac_trn_data)
+int = lm(price ~ . ^2, data = sac_trn_data)
+user = lm(price ~ sqft * beds * longitude * latitude, data = sac_trn_data)
+rf = randomForest(price ~ ., data = sac_trn_data)
+
+model_list = list(add,int,user,rf)
+trn_rmse2 = sapply(model_list, calc_lm_rmse, data = sac_trn_data)
+tst_rmse2 = sapply(model_list, calc_lm_rmse, data = sac_tst_data)
+
+
+table = data.frame(Model_Name = c("Additive",'Interaction','User','Random Forest'), Model_Type = c('lm','lm','lm','rf'), Variables_Used = c("`price ~ .`","`price ~ .^2`","`price ~ sqft * beds * longitude * latitude`","`price ~ .`"), Train_RMSE = trn_rmse2, Test_RMSE = tst_rmse2)
+kable_styling(kable(table, format = "html", digits = 3), full_width = FALSE)
+```
+
+##Exercise 3 (Modeling Price, Response Transformation)
+
+```{r}
+calc_lm_rmse3 = function(mod, data) {
+  actual = data$price
+  predicted = exp(predict(mod, data))
+  sqrt(mean((actual - predicted) ^ 2))
+}
+
+add3 = lm(log(price) ~ ., data = sac_trn_data)
+int3 = lm(log(price) ~ . ^ 2, data = sac_trn_data)
+user3 = lm(log(price) ~ sqft * beds * longitude * latitude, data = sac_trn_data)
+rf3 = randomForest(log(price) ~ ., data = sac_trn_data)
+
+model_list = list(add3,int3,user3,rf3)
+trn_rmse3 = sapply(model_list, calc_lm_rmse3, data = sac_trn_data)
+tst_rmse3 = sapply(model_list, calc_lm_rmse3, data = sac_tst_data)
+
+
+table = data.frame(Model_Name = c("log_Additive",'log_Interaction','log_User','log_Random_Forest'), Model_Type = c('lm','lm','lm','rf'), Variables_Used = c("`log(price) ~ .`","`log(price) ~ .^2`","`log(price) ~ sqft * beds * longitude * latitude`","`log(price) ~.`"), Train_RMSE = trn_rmse3, Test_RMSE = tst_rmse3)
+kable_styling(kable(table, format = "html", digits = 3), full_width = FALSE)
+```
+
+##Exercise 4(Concept Checks)
+
+###a)
+
+According the table of RMSE and Model, the model of additive (model 1) has the lowest train_rmse and test_rmse, so most likely, this model performs better.
+
+###b)
+
+The table states that the model of rf has the much lower train rmse and lowst test rmse, so it likely be the best model to explain the data.
+
+###c)
+
+In accordance with the well-formatted table, we could see that the model of log_rf has the lowest train and test rmse, it might be the best model
+
+###d)
+
+No, the RMSE for both train and test increased after log transformation, which means that it does not appear justified.
+
+###e)
+
+Yes, based on the comparison of exercise 1 and exercise 2, we could observe that the overall train and test rmse decresed as the location main effects added into the model, in other words, from a broader perspective, the rmse for train and test for all models in exercise 2 is lower than exercise 1's. Thus, the location is helpful for explain the data, which indicating that it is helpful for predicting the price.
+
+###f)
+
+We are doing this analysis because we would like to find a relatively best model to explain the data well and predict the data accurately and precisely. In this case, if we already find the best model, we could simply use the known independent values (such as, sqft, latitude......) to make a prediction on the price of the house in Sacarmento. The potential project or company might use this kind of model would be the house trading.
+
+###g)
+
+Yes. First, I do think that after the model comparison (such as, with and without location) and transformation, we generate the best model with the determination of lowest RMSE, and the procedure is reasonable and approciate. Second, the best model that we found, which is random forest, have approxiamtely half of the RMSE value in comparison with other models, and the test_RMSE is lowest as well (No overfitting), so it should be useful for the interpretaion.
+
+
+

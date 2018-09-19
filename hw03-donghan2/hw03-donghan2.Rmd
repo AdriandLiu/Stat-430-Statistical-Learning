@@ -1,0 +1,193 @@
+---
+title: "STAT 432 Homework 03"
+author: "Spring 2018 | Donghan Liu,donghan2 | UIUC"
+date: '**Due:** Friday, February 16, 11:59 PM'
+---
+
+***
+
+Please see the [homework policy document](https://daviddalpiaz.github.io/stat432sp18/homework_policy.html) for detailed instructions and some grading notes. Failure to follow instructions will result in point reductions.
+
+***
+
+> "How did it get so late so soon?"
+>
+> --- **Dr. Seuss**
+
+***
+
+For this homework we will again use the `Sacramento` data from the `caret` package. You should read the documentation for this data. The **goal** of our modeling will be to predict home prices.
+
+You may only use the following packages:
+
+```{r, message = FALSE, warning = FALSE}
+library(caret)
+library(randomForest)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+```
+
+Before modeling, we will perform some data preparation.
+
+Instead of using the `city` or `zip` variables that exist in the dataset, we will simply create a variable indicating whether or not a house is technically within the city limits Sacramento. (We do this because they would both be factor variables with a large number of factors. This is a choice that is made due to laziness, not because it is justified. Think about what issues these variables might cause.)
+
+```{r}
+data(Sacramento)
+sac_data = Sacramento
+sac_data$limits = factor(ifelse(sac_data$city == "SACRAMENTO", "in", "out"))
+sac_data = subset(sac_data, select = -c(city, zip))
+```
+
+A plot of longitude versus latitude gives us a sense of where the city limits are.
+
+```{r, fig.align = "center"}
+qplot(y = longitude, x = latitude, data = sac_data, 
+      col = limits, main = "Sacramento City Limits ")
+```
+
+You should consider performing some additional [exploratory data analysis](https://en.wikipedia.org/wiki/Exploratory_data_analysis), but we provide a histogram of the home prices.
+
+```{r fig.align = "center", message = FALSE, warning = FALSE}
+qplot(x = price, data = sac_data, main = "Sacramento Home Prices")
+```
+
+After these modifications, we test-train split the data.
+
+```{r}
+set.seed(42)
+sac_trn_idx  = sample(nrow(sac_data), size = trunc(0.80 * nrow(sac_data)))
+sac_trn_data = sac_data[sac_trn_idx, ]
+sac_tst_data = sac_data[-sac_trn_idx, ]
+```
+
+The training data should be used for all model fitting. Do not modify the data for any exercise in this assignment.
+
+***
+
+## Exercise 1 ($k$-Nearest Neighbors Preprocessing)
+
+###Setup 1
+```{r}
+calc_lm_rmse = function(mod, data) {
+  actual = data$price
+  predicted = predict(mod, data)
+  sqrt(mean((actual - predicted) ^ 2))
+}
+rmse = function(trndata,tstdata){
+  rmse1 = c()
+  rmse2 = c()
+  rmse3 = c()
+  for (i in 1:100){
+    fit1 = knnreg(price ~ .-baths, data = trndata, k = i)
+    fit2 = knnreg(price ~ scale(beds) + scale(sqft) + scale(latitude) + scale(longitude) + limits + type, data = trndata, k = i)
+    fit3 = knnreg(price ~ scale(beds) + scale(sqft) + scale(latitude) + scale(longitude) + as.numeric(limits) + as.numeric(type), data = trndata, k = i)
+    rmse1 = c(rmse1, calc_lm_rmse(fit1,tstdata))
+    rmse2 = c(rmse2,calc_lm_rmse(fit2,tstdata))
+    rmse3 = c(rmse3,calc_lm_rmse(fit3,tstdata))
+  }
+  return (list(rmse1,rmse2,rmse3))
+}
+
+model_plot = function(rmse){
+  plot(unlist(rmse[1]),type = 'l',col = 'red',main = 'RMSE vs K values',ylim = c(69000,105000),xlab = 'K value', ylab = 'RMSE')
+  points(unlist(rmse[2]),type = 'l',col = 'blue')
+  points(unlist(rmse[3]),type = 'l',col = 'yellow')
+  legend('topright',legend = c('Setup1','Setup2','Setup3'),fill = c('red','blue','yellow'))
+}
+model_plot(rmse(sac_trn_data,sac_tst_data))
+
+```
+
+
+## Exercise 2 (Comparing Models)
+
+```{r}
+fitlm = lm(price ~ . + sqft:type + type:limits - baths, data = sac_trn_data)
+fit_rf = randomForest(price ~ .-baths, data = sac_trn_data)
+rmselm = calc_lm_rmse(fitlm,sac_tst_data)
+rmserf = calc_lm_rmse(fit_rf,sac_tst_data)
+rmse2 = unlist(rmse(sac_trn_data,sac_tst_data)[2])
+
+results = data.frame(Model = c('price ~ scale(beds) + scale(sqft) + scale(latitude) + scale(longitude) + limits + type','price ~ . + sqft:type + type:limits - baths','price ~ .-baths'),Type = c('KNN','Linear Model','Random Forest'),RMSE_test = c(rmse2[which.min(rmse2)],rmselm,rmserf))
+
+kable_styling(kable(results, format = "html", digits = 3), full_width = FALSE)
+```
+
+
+
+## Exercise 3 (Visualizing Results)
+
+```{r}
+par(mfrow=c(1,3))
+
+fit2 = knnreg(price ~ scale(beds) + scale(sqft) + scale(latitude) + scale(longitude) + limits + type, data = sac_trn_data, k = which.min(rmse2))
+
+predictlm = predict(fitlm,sac_tst_data)
+predictknn = predict(fit2,sac_tst_data)
+predictrf = predict(fit_rf,sac_tst_data)
+
+plot(sac_tst_data$price, predictlm,col = 'red',pch = 0,cex = 0.5, main = 'Linear Model', xlab = 'Actual Value', ylab = 'Predict Value')
+abline(0,1)
+plot(sac_tst_data$price, predictknn,col = 'orange',pch = 1,cex = .5, main = 'KNN Model', xlab = 'Actual Value', ylab = 'Predict Value')
+abline(0,1)
+plot(sac_tst_data$price, predictrf,col = 'darkblue',pch = 3,cex = .5, main = 'Random Forest Model', xlab = 'Actual Value', ylab = 'Predict Value')
+abline(0,1)
+
+```
+
+
+
+## Exercise 4 (Test-Train Split)
+
+Repeat Exercise 1, but with the following train and test data. Again, summarize your results in a plot.
+
+```{r}
+set.seed(432)
+sac_trn_idx_new  = sample(nrow(sac_data), size = trunc(0.80 * nrow(sac_data)))
+sac_trn_data_new = sac_data[sac_trn_idx_new, ]
+sac_tst_data_new = sac_data[-sac_trn_idx_new, ]
+```
+
+```{r}
+model_plot(rmse(sac_trn_data_new,sac_tst_data_new))
+```
+
+
+## Exercise 5 (Concept Checks)
+
+
+**[a]**
+As we could see from the plot, the setup 2 (100 models) has the relatively lowest RMSE value and the follow could help us to find the K value with the lowest RMSE.
+```{r}
+which.min(rmse2)
+```
+
+With the minimum RMSE value corresponding to the K value = 9, we could say that the model of setup 2 with k = 9 perform best in Exercise 1
+
+**[b]**
+Yes, the RMSE comparison between the original model and scaling model is obvious, which is, the RMSE for scaling model has much relatively lower RMSE to original model
+
+**[c]**
+Regarding to the comparison between setup1 and setup3, YES, the RMSE has obviously decreasing. However, if compare setup3 to setup2, the effect is small and even slightly higher than the scaling model.
+
+**[d]**
+From the RMSE and model table, we could see that the random forest model with Random Forest model of formula of price ~ .-baths has the lowest RMSE, and most likely to be considered as best performance model.
+
+**[e]**
+
+I would not choose the different model because all the plot does not look any difference, so the lowest RMSE would still be the best choice.
+
+**[f]**
+
+No, the RMSE for setup 2 is still the lowest.
+
+**[g]**
+```{r}
+rmse4 = unlist(rmse(sac_trn_data_new,sac_tst_data_new)[2]) #RMSE from exercise 4
+which.min(rmse4)
+
+isTRUE(which.min(rmse4)>which.min(rmse2))  #Compare the lowest RMSE between exercise 4 and exercise 1 (best performance model, k = 9)
+```
+
+As we could obverse from the above output, the K value that has the lowest RMSE turns out to be 18, rather than the result from exercise 1. Whereas, even though k = 18 has the lowest RMSE in exercise 4, as the function returns, its value still larger than the RMSE value in k = 9 in setup 2 of exercise 1. Thus, the k = 9 setup2 model in exercise 1 overall perform better.

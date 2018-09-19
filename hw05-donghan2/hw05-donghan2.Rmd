@@ -1,0 +1,213 @@
+---
+title: "hw05-donghan2"
+author: "Donghan Liu, Donghan2"
+date: "March 2, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning=FALSE, message=FALSE}
+# general
+library(MASS)
+library(caret)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+
+# specific
+library(e1071)
+library(nnet)
+library(ellipse)
+```
+
+#Solution
+
+##Exercise 1 (Detecting Cancer with KNN)
+```{r}
+wisc_trn = read.csv('wisc-trn.csv')
+wisc_tst = read.csv('wisc-tst.csv')
+calc_err = function(mod, data) {
+  actual = data$class
+  predicted = predict(mod, data, type = 'class')
+  mean(actual != predicted)
+}
+knn_err = c()
+knn_scaled_err = c()
+for (i in 1:200){
+  knn = knn3(factor(class) ~ radius + symmetry + texture, data = wisc_trn, k = i)
+  knn_scaled = knn3(factor(class) ~ scale(radius) + scale(symmetry) + scale(texture), data = wisc_trn, k = i)
+  knn_err[i] = calc_err(knn, wisc_tst)
+  knn_scaled_err[i] = calc_err(knn_scaled, wisc_tst)
+}
+err = list(knn_err, knn_scaled_err)
+dat = matrix(unlist(err), ncol = 2,byrow = FALSE)
+matplot(dat,type = c("l"), pch = 1, col = 3:4, main = 'Error vs Number of Neighbors', xlab = 'Number of Neighbors', ylab = 'Error')
+legend(70, 0.19, legend = c('Knn model without scaled','Knn model with scaled'), col=3:4, pch=1)
+```
+
+##Exercise 2 (Bias-Variance Tradeoff, Logistic Regression)
+
+```{r}
+set.seed(671434599)
+make_sim_data = function(n_obs = 100) {
+  x1 = runif(n = n_obs, min = 0, max = 2)
+  x2 = runif(n = n_obs, min = 0, max = 4)
+  prob = exp(1 + 2 * x1 - 1 * x2) / (1 + exp(1 + 2 * x1 - 1 * x2))
+  y = rbinom(n = n_obs, size = 1, prob = prob)
+  data.frame(y, x1, x2)
+}
+sim_data = make_sim_data()
+```
+
+
+```{r, warning=FALSE, message=FALSE}
+set.seed(671434599)
+n_sims = 2000
+n_models = 4
+predictions = matrix(0, nrow = n_sims, ncol = n_models)
+x =  data.frame(x1 = .50, x2 = .75)
+for (sim in 1:n_sims){
+  sim_data = make_sim_data(n_obs = 30)
+  mod_1 = glm(y ~ 1, data = sim_data, family = "binomial")
+  mod_2 = glm(y ~ x1 + x2, data = sim_data, family = "binomial")
+  mod_3 = glm(y ~ x1 + x2 + x1 * x2, data = sim_data, family = "binomial")
+  mod_4 = glm(y ~ x1 + x2 + I(x1^2) + I(x2^2) + x1 * x2, data = sim_data, family = "binomial")
+  
+  predictions[sim, 1] = predict(mod_1,x, type = "response")
+  predictions[sim, 2] = predict(mod_2,x, type = "response") 
+  predictions[sim, 3] = predict(mod_3,x, type = "response")
+  predictions[sim, 4] = predict(mod_4,x, type = "response")
+}
+
+get_mse = function(truth, estimate) {
+  mean((estimate - truth) ^ 2)
+}
+get_bias = function(estimate, truth) {
+  (mean(estimate) - truth) ^ 2
+}
+get_var = function(estimate) {
+  mean((estimate - mean(estimate)) ^ 2)
+}
+f = function(x1, x2){
+  exp(1 + 2 * x1 - 1 * x2) / (1 + exp(1 + 2 * x1 - 1 * x2))
+}
+bias = apply(predictions, 2, get_bias, truth = f(0.5,0.75))
+variance = apply(predictions, 2, get_var)
+mse = apply(predictions, 2, get_mse, truth = f(0.5,0.75))
+results = data.frame(Model = c('Mod 1: y ~ 1', 'Mod 2: y ~ x1 + x2','Mod 3: y ~ x1 + x2 + x1 * x2', 'Mod 4: y ~ x1 + x2 + I(x1^2) + I(x2^2) + x1 * x2'), Bias = bias, Variance = variance, MSE = mse)
+kable_styling(kable(results, format = "html", digits = 7), full_width = FALSE)
+
+```
+
+
+
+##Exercise 3 (Comparing Classifiers)
+
+```{r}
+hw05_trn = read.csv("hw05-trn.csv")
+hw05_tst = read.csv("hw05-tst.csv")
+hw05_trn$y = factor(hw05_trn$y)
+hw05_tst$y = factor(hw05_tst$y)
+```
+
+```{r}
+featurePlot(x = hw05_trn[, c('x1','x2')], 
+                   y = hw05_trn$y,
+                   plot = "ellipse",
+                   auto.key = list(columns = 2))
+```
+
+```{r}
+mod_addi = multinom(y ~ ., data = hw05_trn, trace = FALSE)
+mod_lda = lda(y ~ ., data = hw05_trn)
+mod_lda_flat = lda(y ~ ., data = hw05_trn, prior = c(1,1,1,1)/4)
+mod_qda = qda(y ~ ., data = hw05_trn)
+mod_qda_flat = qda(y ~ ., data = hw05_trn, prior = c(1,1,1,1)/4)
+mod_nb = naiveBayes(y ~ ., data = hw05_trn)
+```
+
+
+```{r}
+calc_class_err = function(actual, predicted) {
+  mean(actual != predicted)
+}
+
+addi_trn = predict(mod_addi, hw05_trn)
+lda_trn = predict(mod_lda, hw05_trn)$class
+lda_flat_trn = predict(mod_lda_flat, hw05_trn)$class
+qda_trn = predict(mod_qda, hw05_trn)$class
+qda_flat_trn = predict(mod_qda_flat, hw05_trn)$class
+nb_trn = predict(mod_nb, hw05_trn)
+
+addi_tst = predict(mod_addi, hw05_tst)
+lda_tst = predict(mod_lda, hw05_tst)$class
+lda_flat_tst = predict(mod_lda_flat, hw05_tst)$class
+qda_tst = predict(mod_qda, hw05_tst)$class
+qda_flat_tst = predict(mod_qda_flat, hw05_tst)$class
+nb_tst = predict(mod_nb, hw05_tst)
+
+predict_trn = list(addi_trn, lda_trn, lda_flat_trn, qda_trn, qda_flat_trn, nb_trn)
+predict_tst = list(addi_tst, lda_tst, lda_flat_tst, qda_tst, qda_flat_tst, nb_tst)
+
+#Train error
+trn_err = c()
+for (i in predict_trn){
+  trn_err = c(trn_err,calc_class_err(hw05_trn$y, i))
+}
+#Test error
+tst_err = c()
+for (i in predict_tst){
+  tst_err = c(tst_err,calc_class_err(hw05_tst$y, i))
+}
+
+result = data.frame(Model = c('Additive','LDA','LDA flat','QDA','QDA flat','Naive Bayes'),Train_Error = trn_err, Test_Error = tst_err)
+kable_styling(kable(result, format = "html", digits = 4), full_width = FALSE)
+
+```
+
+
+##Exercise 4 (Concept Checks)
+
+**a**
+
+The  Mod 2: y ~ x1 + x2	 has the lowest bias value, which is 0.0000017, it perhaps performs the best.
+
+**b**
+
+Even though model 1 has the lowest MSE value, the bias value of model 1 is much higher than the other three. The model 2 of y ~ x1 + x2 has the second lowest MSE and variance, the lowest bias value, so it might be the best model that perform well.
+
+**c**
+
+The model of QDA flat performs best because of the lowest test error
+
+**d**
+
+Because x1 and x2 violate the assumption of independence for Naive Bayes
+
+**e**
+
+QDA. First, QDA has the lower train and test error than LDA model. Second, due to that the data has different shape and mean and location, the QDA potentially performs better
+
+**f**
+
+Flat prior performs better because of lower test error than non-flat prior model. 
+
+**g**
+
+From the intutional view, class B is the easiest to classify. First, the overlap area between class B and other classes is relatively smaller. Plus, all of other three classes located in the pretty close position and the shape also different from C and D.
+
+
+
+
+
+
+
+
+
+
+
+
+

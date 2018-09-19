@@ -1,0 +1,407 @@
+---
+title: 'A Push For Fair Wages - Anlysis Of Income Inequality In The US'
+author: "Omar Choudhry (oachoud2), Matthew Hamburger (mhambur2), Donghan Liu (donghan2), Ruilin Zhao (rzhao15)"
+date: "May 9, 2018"
+abstract: "This study uses demographic variables from US census data to predict income in counties across the US. The motivation behind predicting income is to see if there are any Income Inequalties that stem from these demographics that could be used as part of social movemements towards income equality. We fit many variable selection regression models to narrow down our models to the most significant variables, using RMSE as an indicator of model accuracy. After testing all our models, we found that a polynomial regression gave the best results and omitted enough variables to make the model interpretable. We concluded that demographic variables are significant when predicting income, and that there is some evidence of income inquality when it comes to gender and race."
+
+output: 
+  html_document: 
+    theme: flatly
+    toc: true
+---
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# Introduction
+The dataset we used for this project was US Census data taken from Kaggle. It contains 1 entry for each county in the United States. This comes out to 3218 rows and 35 columns/variables describing each county. Some of the variables include, race, occupation, transportation, gender, average income, and population. The purpose of our analysis is to predict income based on the some attributes in the dataset. Our goal is to most accurately predict the Income of a given county in order to see if there is a significant inequality due to things like race, gender, occupation, and means of commute. This is a very relevant social question, and quantitative significance could be used as proof for income inequality movements in the US.
+
+```{r,message=FALSE, warning=FALSE, include = FALSE}
+library(corrplot)
+library(caret)
+library(MASS)
+library(glmnet)
+library(knitr)
+library(kableExtra)
+```
+
+```{r include=FALSE}
+# read in the data
+county_dat = read.csv('acs2015_county_data.csv')
+full_data = county_dat
+# drop NAs
+unique(unlist(lapply(county_dat, function(x) which(is.na(x)))))
+county_dat = county_dat[-c(549, 2674),]
+```
+
+### Exploratory Data Analysis
+```{r}
+hist(county_dat$Income, breaks = 50, main = 'Income Distribution', xlab = "Income") # hist of income
+abline(v = mean(county_dat$Income, na.rm = TRUE), col = 'red')
+abline(v = median(county_dat$Income, na.rm = TRUE), col = 'blue')
+legend("topright", legend = c("Mean","Median"),lty = 1, col = c("red","blue"))
+
+par(mfrow = c(1,2))
+poverty = c()
+for (i in unique(county_dat$State)){
+  poverty = c(poverty, mean(county_dat[county_dat$State == i,]$Poverty))
+}
+plot(poverty, main = "Poverty by State",ylab="% in Poverty")
+
+income = c()
+for (i in unique(county_dat$State)){
+  income = c(income, mean(county_dat[county_dat$State == i,]$Income))
+}
+plot(income, main = "Income by State", ylab="Income")
+
+
+par(mfrow = c(1,1))
+
+county_dat = county_dat[,-c(1,3,32)]
+county_dat$Men = county_dat$Men/county_dat$TotalPop
+county_dat$Women = county_dat$Women/county_dat$TotalPop
+M = cor(county_dat[,-c(1)])
+corrplot(M, method="circle",title = "Correlation Between Variables")
+```
+
+From the histogram of Income, we can observe that the income from the data roughly follows a normal distribution. Both the mean and median lines are close to each other, and it is shaped like a bell curve. However, we detected, there are some outliers in the data, which could potentially  influence our model fitting. Puerto Rico, bottom right of the income graph and top right of the poverty graph should definitely be removed, because it is unlike any of the other data points in our set.
+
+We also created a correlation plot for the full data frame to see if there was any potential problems for multicollinearity and which variables are most highly correlated. Based off intuition poverty and unemployment will be variables to closely watch. They are both useful indicators, but are also candidates for correlation with each other as well as other predictors. In order the top 5 predictors that have the highest correlation with income are; poverty, child poverty, professional, Asian and unemployment rate. However, some concerns are proved to be true as poverty, child poverty and unemployment are all correlated with one another. This will be something that we will keep an eye on as our work progress, but hopefully some of the more advanced models will pull two of the correlated factors out.
+
+
+```{r}
+set.seed(432)
+county_idx = createDataPartition(county_dat$Income, p = 0.75, list = FALSE)
+county_trn = county_dat[county_idx, ]
+county_tst = county_dat[-county_idx, ]
+```
+
+# Methods
+
+###Data
+We had to perform some data manipulation and processing in order to prepare the data for model fitting. First we dropped all non-numeric variables, State and County, which will not be helpful when we fit the models as County is unique per row, and State has many categories. We then changed the variables Men, Women and Citizen from population counts to percentages of population to make them more comparable across counties. This also solved the multicollinearity issue between the 3 variables and Population. We also dropped a variable from each percentage category. For example, we dropped Men because Men and Women of each observation will add up to 1. If we included both variables in our models, there would be perfect correlation between variables in the same category. Similarly, we dropped Pacific from races category, OtherTransp from transportation methods and Office from professions. We also dropped observation ID, CensusId, IncomeErr, and IncomePerCapErr, which will be irrelevant in predicting income. Finally, we removed Puerto Rico from our analysis entirely, as our EDA showed that it was a major outlier.
+
+```{r}
+
+# IncomeErr, IncomePerCap, IncomePerCapErr
+county_dat = county_dat[,-which(names(county_dat) %in% c('Men','Pacific', 'OtherTransp', 'Office', 'IncomeErr', 'IncomePerCap', 'IncomePerCapErr'))]
+
+county_dat$Citizen = county_dat$Citizen/county_dat$TotalPop
+county_dat = county_dat[,-c(1)]
+county_dat = county_dat[!(county_dat$State == 'Puerto Rico'),]
+```
+
+
+###Models
+
+Our goal is to find a model that not only brings us good Income predictions (low RMSE), but also are easy to interpret. Based on this, we fitted quite a few models that should be easy to interpret in order to see which would return the best predictions. We applied simple linear regression models with forward/backward/stepwise selections, a linear model with interaction terms, a polynomial model, a ridge model and a lasso model. We also did two KNN models with scaled/unscaled variables and a random forest model. Because random forest models are hard to interpret, we will just use those results as  comparisons to see how well our interpretable models perform.
+
+
+```{r,include=FALSE,echo=TRUE}
+# BIC
+fwd_lm_bic = step(lm(Income ~ 1, data = county_trn), direction = 'forward', scope = formula(lm(Income ~ ., data = county_trn)), k = log(nrow(county_trn)))
+
+bwd_lm_bic = step(lm(Income ~ ., data = county_trn), direction = 'backward', k = log(nrow(county_trn)))
+
+step_lm_bic = step(lm(Income ~ 1, data = county_trn), direction = 'both', scope = formula(lm(Income ~ ., data = county_trn)), k = log(nrow(county_trn)))
+
+step_inter_lm_bic = step(lm(Income ~ 1, data = county_trn), direction = 'both', scope = formula(lm(Income ~ (Poverty + Professional + Citizen + MeanCommute + SelfEmployed + Asian + Walk + Hispanic + Native + PrivateWork + TotalPop + Women + Carpool)^2, data = county_trn)), k = log(nrow(county_trn)))
+
+step_poly_bic = step(lm(Income ~ 1, data = county_trn), direction = 'both', scope = formula(lm(Income ~ Poverty + Professional + Citizen + MeanCommute + SelfEmployed + Asian + Walk + Hispanic + Native + PrivateWork + TotalPop + Women + Carpool + I(Poverty^2) + I(Professional^2) + I(Citizen^2) + I(MeanCommute^2) + I(SelfEmployed^2) + I(Asian^2) + I(Walk^2) + I(Hispanic^2) + I(Native^2) + I(PrivateWork^2) + I(TotalPop^2) + I(Women^2) + I(Carpool^2), data = county_trn)), k = log(nrow(county_trn)))
+```
+
+- Linear model(Forward Selection or Stepwise Selection)
+
+```{r, warning=FALSE, echo=TRUE}
+set.seed(432)
+# stepwise and forward are the same
+fwd_lm = train(
+  Income ~ Poverty + Professional + Citizen + MeanCommute + SelfEmployed + Asian + Walk + Hispanic + Native + PrivateWork + TotalPop + Women + Carpool,
+  data = county_trn,
+  trControl = trainControl(method = "cv", number = 10),
+  method = "lm"
+)
+```
+
+- Linear model(Backward Selection)
+
+```{r, warning=FALSE, echo=TRUE}
+set.seed(432)
+bwd_lm = train(
+  Income ~ TotalPop + Women + Hispanic + Native + Asian + Citizen + Poverty + Professional + Service + Production + Walk + MeanCommute + PublicWork + SelfEmployed,
+  data = county_trn,
+  trControl = trainControl(method = "cv", number = 10),
+  method = "lm"
+)
+```
+
+- Linear model with interaction terms (Stepwise Selection)
+
+```{r, warning=FALSE, echo=TRUE}
+set.seed(432)
+# stepwise and forward are the same
+inter_lm = train(
+  Income ~ (Poverty + Professional + Citizen + MeanCommute + SelfEmployed + Asian + Walk + Hispanic + Native + PrivateWork + Women + Carpool + Professional:MeanCommute + Poverty:Professional + Poverty:Asian + Poverty:PrivateWork + Asian:PrivateWork + Poverty:Citizen + Poverty:Women + SelfEmployed:Native + PrivateWork:Women + Native:Women + Professional:SelfEmployed + Walk:Women + Native:Carpool + MeanCommute:Walk + Poverty:MeanCommute + PrivateWork:Hispanic + Poverty:Hispanic + MeanCommute:Hispanic + Native:PrivateWork)^2,
+  data = county_trn,
+  trControl = trainControl(method = "cv", number = 10),
+  method = "lm"
+)
+```
+
+- Polynomial model(Stepwise Selection)
+
+```{r, warning=FALSE, echo=TRUE}
+set.seed(432)
+# stepwise and forward are the same
+poly_fit = train(
+  Income ~ Poverty + I(Professional^2) + I(Citizen^2)  + I(Poverty^2) + SelfEmployed + I(MeanCommute^2) + Asian + Native + I(Asian^2) + I(Women^2) + PrivateWork + TotalPop + I(PrivateWork^2) + Citizen + Professional,
+  data = county_trn,
+  trControl = trainControl(method = "cv", number = 10),
+  method = "lm"
+)
+```
+
+- KNN model with unscaled predictors
+(1, 5, 10, 15, 20 and 25 are used as numbers of nearest neighbors)
+
+```{r, echo=TRUE}
+set.seed(432)
+knn_unscaled_mod = train(
+  Income ~ .,
+  data = county_trn,
+  trControl = trainControl(method = "cv", number = 10),
+  method = "knn",
+  tuneGrid = expand.grid(k = c(1, 5, 10, 15, 20, 25))
+)
+```
+
+- KNN model with scaled predictors
+
+```{r, echo=TRUE, warning = FALSE, message=FALSE}
+set.seed(432)
+knn_scaled_mod = train(
+  Income ~ .,
+  data = county_trn,
+  trControl = trainControl(method = "cv", number = 10),
+  preProcess = c("center", "scale"),
+  method = "knn",
+  tuneGrid = expand.grid(k = c(1, 5, 10, 15, 20, 25))
+)
+```
+
+- Random Forest Model
+
+```{r, echo=TRUE}
+set.seed(432)
+rf_mod = train(
+  Income ~ .,
+  data = county_trn,
+  trControl = trainControl(method = "cv", number = 10),
+  method = "rf"
+)
+```
+
+- Ridge Model
+
+```{r, echo=TRUE}
+set.seed(432)
+trn_X = model.matrix(Income ~ ., county_trn)[, -9]
+trn_y = county_trn$Income
+tst_X = model.matrix(Income ~ ., county_tst)[, -9]
+tst_y = county_tst$Income
+
+ridge_mod = cv.glmnet(trn_X, trn_y, alpha = 0)
+ridge_rmse = sqrt(mean((tst_y - predict(ridge_mod, tst_X, s = "lambda.min")) ^ 2))
+ridge_cv_rmse = sqrt(ridge_mod$cvm[ridge_mod$lambda == ridge_mod$lambda.min])
+```
+
+- Lasso Model
+
+```{r, echo=TRUE}
+set.seed(432)
+lasso_mod = cv.glmnet(trn_X, trn_y, alpha = 1)
+lasso_rmse = sqrt(mean((tst_y - predict(lasso_mod, tst_X, s = "lambda.min")) ^ 2))
+lasso_cv_rmse = sqrt(lasso_mod$cvm[lasso_mod$lambda == lasso_mod$lambda.min])
+```
+
+
+```{r, echo=FALSE, solution=TRUE}
+calc_rmse = function(actual, predicted) {
+  sqrt(mean((actual - predicted) ^ 2))
+}
+```
+
+```{r, solution = TRUE, echo = FALSE}
+get_best_result = function(caret_fit) {
+  best = which(rownames(caret_fit$results) == rownames(caret_fit$bestTune))
+  best_result = caret_fit$results[best, ]
+  rownames(best_result) = NULL
+  best_result
+}
+```
+
+# Results
+
+```{r, solution = TRUE, echo = FALSE}
+results = data.frame(
+  method = c("Linear Forward/Stepwise Selection", "Linear backward Selection", "Linear Model with Interactions", "Polynomial model", "KNN Unscaled", "KNN Scaled","Random Forest", "Ridge Model", "Lasso Model"),
+  cv = c(
+    get_best_result(fwd_lm)$RMSE,
+    get_best_result(bwd_lm)$RMSE,
+    get_best_result(inter_lm)$RMSE,
+    get_best_result(poly_fit)$RMSE,
+    get_best_result(knn_unscaled_mod)$RMSE,
+    get_best_result(knn_scaled_mod)$RMSE,
+    get_best_result(rf_mod)$RMSE,
+    ridge_cv_rmse,
+    lasso_cv_rmse
+  ),
+  test = c(
+    calc_rmse(county_tst$Income, predict(fwd_lm, county_tst)),
+    calc_rmse(county_tst$Income, predict(bwd_lm, county_tst)),
+    calc_rmse(county_tst$Income, predict(inter_lm, county_tst)),
+    calc_rmse(county_tst$Income, predict(poly_fit, county_tst)),
+    calc_rmse(county_tst$Income, predict(knn_unscaled_mod, county_tst)),
+    calc_rmse(county_tst$Income, predict(knn_scaled_mod, county_tst)),
+    calc_rmse(county_tst$Income, predict(rf_mod, county_tst)),
+    ridge_rmse,
+    lasso_rmse
+  )
+)
+colnames(results) = c("Method", "CV RMSE", "Test RMSE")
+kable_styling(kable(results, format = "html", digits = 2), full_width = FALSE)
+```
+
+CV RMSE and Test RMSE are the criteria we are using to determine how well the models make predictions. From the result table, we can see that the random forest model produces the best prediction result and the polynomial model produces the second best prediction. Since random forest model is always hard to interpret and the polynomial model is interpretable, we chose the polynomial model as our best model.
+
+# Discussion
+
+Our two best models in terms of RMSE of Income were Random Forest and a second degree Polynomial Regression. Being that our goal is to have an interpretable model for predicting income we have chosen the Polynomial Regression as our best model. The inclusion of the squared terms indicates that income has a non-linear relationship with some of the independent variables. This means that for certain variables there is a peak influence, before larger values start to have a diminishing effect (like a parabola). When applying stepwise selection to he model, it did a good job of taking out factors that we expected to have high multicollinearity. 
+
+The final model has narrowed down the races and professions to two variables and only one commuter variable. Looking at our model summary you can see what variables our methods have deemed most statistically significant. Some interesting conclusions are; the Asian and Native variables stayed in the model, mean commute was the only significant variable in terms of transportation and poverty was chosen over unemployment. We also saw that the squared women term stayed in the model.
+
+These are interesting because, the Asian variable has a very positive coefficient, meaning higher Asian population results in significantly higher income. We, see the opposite with the Women variable, where a higher percentage of women in a county points to lower income due to the negative coefficient.
+
+We think Asian and Native stayed in the models because they’re smaller populations, with less variance than the other races. Their populations are also more concentrated, so income differences in those areas could be revealed by the Asian and Native American races. Mean commute could be used as an indicator of location. We would expect people who live in more urban areas to longer commutes than people who live in smaller towns.
+
+In this study we have seen that certain demographic variables are very significant when predicting income. The appearance of the variables Asian and Women in the final model are slightly concerning in terms of Income inequality. This model could be presented as part of petitions and movements towards income inequality to provide quantitative evidence that this is a real issue.
+
+```{r}
+summary(poly_fit)
+```
+
+
+# Appendix
+
+```{r}
+str(full_data)
+```
+
+
+```{r, echo=T, results='hide'}
+library(corrplot)
+library(caret)
+library(MASS)
+library(glmnet)
+library(knitr)
+library(kableExtra)
+
+# read in the data
+county_dat = read.csv('acs2015_county_data.csv')
+full_data = county_dat
+# drop NAs
+unique(unlist(lapply(county_dat, function(x) which(is.na(x)))))
+county_dat = county_dat[-c(549, 2674),]
+
+#hist(county_dat$Income, breaks = 50, main = 'Income Distribution', xlab = "Income") # hist of income
+#abline(v = mean(county_dat$Income, na.rm = TRUE), col = 'red')
+#abline(v = median(county_dat$Income, na.rm = TRUE), col = 'blue')
+#legend("topright", legend = c("Mean","Median"),lty = 1, col = c("red","blue"))
+
+par(mfrow = c(1,2))
+poverty = c()
+for (i in unique(county_dat$State)){
+  poverty = c(poverty, mean(county_dat[county_dat$State == i,]$Poverty))
+}
+#plot(poverty, main = "Poverty by State",ylab="% in Poverty")
+
+income = c()
+for (i in unique(county_dat$State)){
+  income = c(income, mean(county_dat[county_dat$State == i,]$Income))
+}
+#plot(income, main = "Income by State", ylab="Income")
+
+
+par(mfrow = c(1,1))
+
+county_dat = county_dat[,-c(1,3,32)]
+county_dat$Men = county_dat$Men/county_dat$TotalPop
+county_dat$Women = county_dat$Women/county_dat$TotalPop
+M = cor(county_dat[,-c(1)])
+#corrplot(M, method="circle")
+
+set.seed(432)
+county_idx = createDataPartition(county_dat$Income, p = 0.75, list = FALSE)
+county_trn = county_dat[county_idx, ]
+county_tst = county_dat[-county_idx, ]
+
+# IncomeErr, IncomePerCap, IncomePerCapErr
+county_dat = county_dat[,-which(names(county_dat) %in% c('Men','Pacific', 'OtherTransp', 'Office', 'IncomeErr', 'IncomePerCap', 'IncomePerCapErr'))]
+
+county_dat$Citizen = county_dat$Citizen/county_dat$TotalPop
+county_dat = county_dat[,-c(1)]
+county_dat = county_dat[!(county_dat$State == 'Puerto Rico'),]
+
+# BIC
+fwd_lm_bic = step(lm(Income ~ 1, data = county_trn), direction = 'forward', scope = formula(lm(Income ~ ., data = county_trn)), k = log(nrow(county_trn)))
+
+bwd_lm_bic = step(lm(Income ~ ., data = county_trn), direction = 'backward', k = log(nrow(county_trn)))
+
+step_lm_bic = step(lm(Income ~ 1, data = county_trn), direction = 'both', scope = formula(lm(Income ~ ., data = county_trn)), k = log(nrow(county_trn)))
+
+step_inter_lm_bic = step(lm(Income ~ 1, data = county_trn), direction = 'both', scope = formula(lm(Income ~ (Poverty + Professional + Citizen + MeanCommute + SelfEmployed + Asian + Walk + Hispanic + Native + PrivateWork + TotalPop + Women + Carpool)^2, data = county_trn)), k = log(nrow(county_trn)))
+
+step_poly_bic = step(lm(Income ~ 1, data = county_trn), direction = 'both', scope = formula(lm(Income ~ Poverty + Professional + Citizen + MeanCommute + SelfEmployed + Asian + Walk + Hispanic + Native + PrivateWork + TotalPop + Women + Carpool + I(Poverty^2) + I(Professional^2) + I(Citizen^2) + I(MeanCommute^2) + I(SelfEmployed^2) + I(Asian^2) + I(Walk^2) + I(Hispanic^2) + I(Native^2) + I(PrivateWork^2) + I(TotalPop^2) + I(Women^2) + I(Carpool^2), data = county_trn)), k = log(nrow(county_trn)))
+
+calc_rmse = function(actual, predicted) {
+  sqrt(mean((actual - predicted) ^ 2))
+}
+
+get_best_result = function(caret_fit) {
+  best = which(rownames(caret_fit$results) == rownames(caret_fit$bestTune))
+  best_result = caret_fit$results[best, ]
+  rownames(best_result) = NULL
+  best_result
+}
+
+results = data.frame(
+  method = c("Linear Forward/Stepwise Selection", "Linear backward Selection", "Linear Model with Interactions", "Polynomial model", "KNN Unscaled", "KNN Scaled", "Ridge Model", "Lasso Model"),
+  cv = c(
+    get_best_result(fwd_lm)$RMSE,
+    get_best_result(bwd_lm)$RMSE,
+    get_best_result(inter_lm)$RMSE,
+    get_best_result(poly_fit)$RMSE,
+    get_best_result(knn_unscaled_mod)$RMSE,
+    get_best_result(knn_scaled_mod)$RMSE,
+    #get_best_result(rf_mod)$RMSE,
+    ridge_cv_rmse,
+    lasso_cv_rmse
+  ),
+  test = c(
+    calc_rmse(county_tst$Income, predict(fwd_lm, county_tst)),
+    calc_rmse(county_tst$Income, predict(bwd_lm, county_tst)),
+    calc_rmse(county_tst$Income, predict(inter_lm, county_tst)),
+    calc_rmse(county_tst$Income, predict(poly_fit, county_tst)),
+    calc_rmse(county_tst$Income, predict(knn_unscaled_mod, county_tst)),
+    calc_rmse(county_tst$Income, predict(knn_scaled_mod, county_tst)),
+    #calc_rmse(county_tst$Income, predict(rf_mod, county_tst)),
+    ridge_rmse,
+    lasso_rmse
+  )
+)
+colnames(results) = c("Method", "CV RMSE", "Test RMSE")
+kable_styling(kable(results, format = "html", digits = 2), full_width = FALSE)
+
+```
+

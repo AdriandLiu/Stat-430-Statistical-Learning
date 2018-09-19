@@ -1,0 +1,328 @@
+---
+title: 'STAT 420: Homework 3'
+author: "Spring 2018, Hao Wang NetID: haow2"
+date: 'Due: Monday, February 19 by 11:30 PM CT'
+output:
+  html_document:
+    theme: readable
+    toc: yes
+---
+
+
+# Assignment
+
+## Exercise 1 (Using `lm` for Inference)
+
+For this exercise we will again use the `faithful` dataset. Remember, this is a default dataset in `R`, so there is no need to load it. You should use `?faithful` to refresh your memory about the background of this dataset about the duration and waiting times of eruptions of [the Old Faithful geyser](http://www.yellowstonepark.com/about-old-faithful/) in [Yellowstone National Park](https://en.wikipedia.org/wiki/Yellowstone_National_Park).
+
+**(a)** Fit the following simple linear regression model in `R`. Use the eruption duration as the response and waiting time as the predictor. 
+
+\[
+Y_i = \beta_0 + \beta_1 x_i + \epsilon_i
+\]
+
+Store the results in a variable called `faithful_model`. Use a $t$ test to test the significance of the regression. Report the following:
+
+- The null and alternative hypotheses.
+- The value of the test statistic.
+- The p-value of the test.
+- A statistical decision at $\alpha = 0.05$.
+- A conclusion in the context of the problem.
+
+When reporting these, you should explicitly state them in your document, not assume that a reader will find and interpret them from a large block of `R` output.
+
+####Solution:
+```{r}
+faithful_model = lm(eruptions~waiting, data=faithful)
+```
+
+$$
+H_0: \beta_1 = 0 \\
+H_1: \beta_1 \neq 0
+$$
+```{r}
+my_test = summary(faithful_model)
+my_t = my_test$coefficients[2,3]
+my_pval = my_test$coefficients[2,4]
+my_t
+my_pval
+```
+```{r,eval=FALSE}
+"Statistical decision: 
+Reject the null hypothesis at alpha = 0.05"
+
+"Conclusion: 
+We can conclude that there this a strong linear relationship between eruptions duration and waiting time." 
+
+```
+
+**(b)** Calculate a 95% confidence interval for $\beta_1$. Give an interpretation of the interval in the context of the problem.
+
+####Solution:
+```{r}
+beta_1_conf = confint(faithful_model, level = 0.95)[2,]
+beta_1_conf
+```
+
+```{r, echo = FALSE}
+cat("we are 95% confident that for an increase in waiting time of 1 unit, the average increase in euption is between ", beta_1_conf[1], " and ", beta_1_conf[2], " times in mins, which is the interval for beta_1.", sep = "")
+```
+
+**(c)** Calculate a 99% confidence interval for $\beta_0$. Give an interpretation of the interval in the context of the problem.
+
+```{r}
+beta_0_conf = confint(faithful_model, level = 0.99)[1,]
+beta_0_conf
+```
+
+```{r, echo= FALSE}
+cat("we are 99% confident that for an increase in waiting time of 1 unit, the average increase in euption is between ", beta_0_conf[1], " and ", beta_0_conf[2], " times in mins, which is the interval for beta_1.", sep = "")
+```
+
+**(d)** Use a 90% confidence interval to estimate the mean eruption duration for waiting times of 75 and 100 minutes. Which of the two intervals is wider? Why?
+
+####Solution:
+```{r}
+new_waiting = data.frame(waiting = c(75,100))
+predict(faithful_model,newdata=new_waiting, interval = c("confidence"), level = 0.9)
+range(faithful$waiting)
+```
+
+```{r, eval = FALSE}
+"100 has high wider interval because it is out of the range of waiting time."
+```
+
+**(e)** Use a 90% prediction interval to predict the eruption duration for waiting times of 75 and 80 minutes.
+
+```{r}
+new_waiting = data.frame(waiting = c(75,80))
+predict(faithful_model,newdata=new_waiting, interval = c("confidence"), level = 0.9)
+```
+
+**(f)** Create a scatterplot of the data. Add the regression line, 90% confidence bands, and 90% prediction bands.
+
+```{r}
+wt_grid = seq(min(faithful$waiting), max(faithful$waiting),by = 0.01)
+erup_ci_band = predict(faithful_model,
+                       newdata = data.frame(waiting = wt_grid),
+                       interval = "confidence", level = 0.90)
+erup_pi_band = predict(faithful_model,
+                       newdata = data.frame(waiting = wt_grid),
+                       interval = "prediction", level = 0.90)
+plot(eruptions ~ waiting, data = faithful,
+     xlab = "Waiting time",
+     ylab = "eruption duration",
+     main = "eruption duration vs waiting time",
+     pch = 20,
+     cex = 2,
+     col = "pink",
+     ylim = c(min(erup_pi_band),max(erup_pi_band)))
+abline(faithful_model, lwd = 5, col = "light green")
+lines(wt_grid,erup_ci_band[,"lwr"],col = "purple", lwd = 3, lty = 2)
+lines(wt_grid,erup_ci_band[,"upr"],col = "purple", lwd = 3, lty = 2)
+lines(wt_grid,erup_pi_band[,"lwr"],col = "purple", lwd = 3, lty = 2)
+lines(wt_grid,erup_pi_band[,"upr"],col = "purple", lwd = 3, lty = 2)
+points(mean(faithful$waiting),mean(faithful$eruptions), pch = "+", cex =3)
+```
+
+
+## Exercise 2 (Using `lm` for Inference)
+
+For this exercise we will again use the `diabetes` dataset which can be found in the `faraway` package.
+
+**(a)** Fit the following simple linear regression model in `R`. Use the total cholesterol as the response and weight as the predictor. 
+
+\[
+Y_i = \beta_0 + \beta_1 x_i + \epsilon_i
+\]
+
+Store the results in a variable called `cholesterol_model`. Use an $F$ test to test the significance of the regression. Report the following:
+
+- The null and alternative hypotheses.
+- The ANOVA table. (You may use `anova()` and omit the row for Total.)
+- The value of the test statistic.
+- The p-value of the test.
+- A statistical decision at $\alpha = 0.01$.
+- A conclusion in the context of the problem.
+
+When reporting these, you should explicitly state them in your document, not assume that a reader will find and interpret them from a large block of `R` output.
+
+####Solution:
+```{r}
+library(faraway)
+cholosterol_model = lm(chol ~ weight, data=diabetes)
+```
+
+$$
+H_0: \beta_1 = 0 \\
+H_1: \beta_1 \neq 0 
+$$
+
+```{r}
+my_table = anova(cholosterol_model)
+my_table
+my_fval = my_table[4]
+my_fval
+my_pval = my_table[5]
+my_pval
+```
+
+```{r,eval=FALSE}
+"Statistical decision: 
+Do not reject the null hypothesis at alpha = 0.01"
+
+"Conclusion: 
+We cannot conclude that there this a strong linear relationship between eruptions duration and waiting time." 
+```
+
+
+**(b)** Fit the following simple linear regression model in `R`. Use HDL as the response and weight as the predictor. 
+
+\[
+Y_i = \beta_0 + \beta_1 x_i + \epsilon_i
+\]
+
+Store the results in a variable called `hdl_model`. Use an $F$ test to test the significance of the regression. Report the following:
+
+- The null and alternative hypotheses.
+- The ANOVA table. (You may use `anova()` and omit the row for Total.)
+- The value of the test statistic.
+- The p-value of the test.
+- A statistical decision at $\alpha = 0.01$.
+- A conclusion in the context of the problem.
+
+When reporting these, you should explicitly state them in your document, not assume that a reader will find and interpret them from a large block of `R` output.
+
+####Solution:
+```{r}
+hdl_model = lm(hdl ~ weight, data=diabetes)
+```
+
+$$
+H_0: \beta_1 = 0 \\
+H_1: \beta_1 \neq 0 
+$$
+
+```{r}
+my_table = anova(hdl_model)
+my_table
+my_fval = my_table[4]
+my_fval
+my_pval = my_table[5]
+my_pval
+```
+
+```{r,eval=FALSE}
+"Statistical decision: 
+Reject the null hypothesis at alpha = 0.01"
+
+"Conclusion: 
+We can conclude that there this a strong linear relationship between eruptions duration and waiting time." 
+```
+
+## Exercise 3 (Simulating Sampling Distributions)
+
+For this exercise we will simulate data from the following model:
+
+\[
+Y_i = \beta_0 + \beta_1 x_i + \epsilon_i
+\]
+
+Where $\epsilon_i \sim N(0, \sigma^2).$ Also, the parameters are known to be:
+
+- $\beta_0 = 4$
+- $\beta_1 = 2.5$
+- $\sigma^2 = 3$
+
+We will use samples of size $n = 60$.
+
+**(a)** Simulate this model $1500$ times. Each time use `lm()` to fit a SLR model, then store the value of $\hat{\beta}_0$ and $\hat{\beta}_1$. Set a seed using **your** UIN before performing the simulation. Note, we are simualting the $x$ values once, and then they remain fixed for the remainder of the exercise.
+
+####Solution:
+```{r}
+uin = 673558619
+set.seed(uin)
+n = 60
+x = seq(0, 30, length = n)
+
+Sxx = sum((x-mean(x))^2)
+
+beta_0 = 4
+beta_1 = 2.5
+sigma = sqrt(3)
+var_beta_1_hat = sigma^2/Sxx
+
+num_sample = 1500
+beta_0_hats = rep(0, num_sample)
+beta_1_hats = rep(0, num_sample)
+
+for(i in 1:num_sample){
+  eps = rnorm(n, mean = 0, sd = sigma)
+  y = beta_0 +beta_1*x +eps
+  sim_model = lm(y~x)
+  
+  beta_0_hats[i] = coef(sim_model)[1]
+  beta_1_hats[i] = coef(sim_model)[2]
+}
+
+```
+
+**(b)** For the *known* values of $x$, what is the expected value of $\hat{\beta}_1$?
+
+####Solution:
+```{r}
+E_beta1_hat = beta_1
+E_beta1_hat
+```
+
+**(c)** For the known values of $x$, what is the standard deviation of $\hat{\beta}_1$?
+
+####Solution:
+```{r}
+sqrt(var_beta_1_hat)
+```
+
+**(d)** What is the mean of your simulated values of $\hat{\beta}_1$? Does this make sense given your answer in **(b)**?
+
+####Solution:
+```{r}
+mean(beta_1_hats)
+```
+
+####Solution:
+```{r,eval=FALSE}
+"Yes, the large sample size makes the data close to normal distribution and therefore, close to true mean."
+```
+**(e)** What is the standard deviation of your simulated values of $\hat{\beta}_1$? Does this make sense given your answer in **(c)**?
+
+####Solution:
+```{r}
+sd(beta_1_hats)
+```
+```{r,eval=FALSE}
+"Yes, the large sample size makes the data close to normal distribution and therefore, close to true sd."
+```
+
+**(f)** Plot a histogram of your simulated values for $\hat{\beta}_1$. Add the normal curve for the true sampling distribution of $\hat{\beta}_1$.
+
+####Solution:
+```{r}
+hist(beta_1_hats, prob = TRUE, breaks = 20,
+     xlab = expression(hat(beta)[1]),main = "", border = "blue")
+curve(dnorm(x, mean = beta_1,sd = sqrt(var_beta_1_hat)),
+      col = "light green", add = TRUE, lwd =3)
+```
+
+**(g)** Create a scatterplot of the $x$ values and the fitted $y$ values from the true model. Create $1500$ new samples of size `n = 60` from the model. Each time use `lm()` to fit a SLR model, and add the fitted regression line to the plot. (The points from your original scatterplot will not longer be visible, this is okay.) Add a final line that is thicker, and a different color, for the true model.
+
+####Solution:
+```{r}
+plot(y~x)
+for(i in 1:num_sample){
+  eps = rnorm(n, mean = 0, sd=sigma)
+  y = beta_0 +beta_1*x +eps
+  sim_model = lm(y~x)
+  abline(sim_model)
+}
+abline(3,2.5,col = "Orange", lwd=3)
+```
